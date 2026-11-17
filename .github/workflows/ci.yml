@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  stack:
+    # The whole stack (PostgreSQL, Hydra, the app, Caddy) on plain HTTP, then the M1 exit checks.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: deploy/make-secrets.sh
+      - name: Start the stack
+        working-directory: deploy
+        env:
+          ACME_EMAIL: local@localhost
+        run: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build --wait --wait-timeout 180
+      - run: tools/smoke.sh
+      - name: Logs on failure
+        if: failure()
+        working-directory: deploy
+        env:
+          ACME_EMAIL: local@localhost
+        run: docker compose -f docker-compose.yml -f docker-compose.local.yml logs --no-color

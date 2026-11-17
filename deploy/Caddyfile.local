@@ -1,0 +1,15 @@
+# Local run (docker-compose.local.yml): plain HTTP on http://localhost:8080, the same routes as production.
+(routes) {
+	@hydra path /oauth2/* /userinfo /.well-known/openid-configuration /.well-known/jwks.json
+	handle @hydra {
+		reverse_proxy hydra:4444
+	}
+	handle {
+		reverse_proxy app:8790
+	}
+	header -Server
+}
+
+http://localhost:8080 {
+	import routes
+}

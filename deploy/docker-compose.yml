@@ -1,0 +1,122 @@
+# LotusPond Accounts in production at https://accounts.lotuspond.ai, on its own server in Mumbai (build plan
+# docs/plans/2026-11-17-accounts-step-1.md in lotuspond-ai/lotuspond). See deploy/README.md.
+#   cd deploy && ./make-secrets.sh && $EDITOR .env && docker compose up -d --build
+name: lotuspond-accounts
+
+# Three networks keep each part reachable only by what needs it:
+#   edge:  Caddy, the app and Hydra's public port. Caddy is on this network only.
+#   data:  PostgreSQL, the app and Hydra. No route to the internet.
+#   admin: the app and Hydra's admin port, which listens only on Hydra's fixed address here (hydra.yml).
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.251.0/24
+  data:
+    internal: true
+  admin:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.250.0/29
+
+services:
+  db:
+    image: postgres:16-alpine@sha256:81e77a4833487b8132fe4b00bedd39dc3f74b8641e387f19312a48f7de218c2e
+    environment:
+      POSTGRES_USER: postgres_admin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env (make-secrets.sh does)}
+      POSTGRES_DB: postgres
+      DIRECTORY_DB_PASSWORD: ${DIRECTORY_DB_PASSWORD:?Set DIRECTORY_DB_PASSWORD in deploy/.env (make-secrets.sh does)}
+      CELL_IN_DB_PASSWORD: ${CELL_IN_DB_PASSWORD:?Set CELL_IN_DB_PASSWORD in deploy/.env (make-secrets.sh does)}
+      HYDRA_DB_PASSWORD: ${HYDRA_DB_PASSWORD:?Set HYDRA_DB_PASSWORD in deploy/.env (make-secrets.sh does)}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-databases.sh:ro
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres_admin -d postgres"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # Applies Hydra's own migrations, then exits. Hydra starts only after it succeeds.
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0-distroless@sha256:ad53a123ddf869fc23ea74f3d76b47e2966dc52f559e93ab31f81440f4d60c5e
+    command: ["migrate", "sql", "up", "--read-from-env", "--yes"]
+    environment:
+      DSN: postgres://hydra:${HYDRA_DB_PASSWORD}@db:5432/hydra?sslmode=disable
+    networks: [data]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  hydra:
+    image: oryd/hydra:v26.2.0-distroless@sha256:ad53a123ddf869fc23ea74f3d76b47e2966dc52f559e93ab31f81440f4d60c5e
+    command: ["serve", "all", "--config", "/etc/hydra/hydra.yml", "--sqa-opt-out"]
+    environment:
+      DSN: postgres://hydra:${HYDRA_DB_PASSWORD}@db:5432/hydra?sslmode=disable&max_conns=20
+      SECRETS_SYSTEM: ${HYDRA_SECRETS_SYSTEM:?Set HYDRA_SECRETS_SYSTEM in deploy/.env (make-secrets.sh does)}
+      SECRETS_COOKIE: ${HYDRA_SECRETS_COOKIE:?Set HYDRA_SECRETS_COOKIE in deploy/.env (make-secrets.sh does)}
+      SQA_OPT_OUT: "true"
+    volumes:
+      - ./hydra.yml:/etc/hydra/hydra.yml:ro
+    networks:
+      edge: {}
+      data: {}
+      admin:
+        ipv4_address: 172.31.250.2
+        aliases: [hydra-admin]
+    expose:
+      - "4444"
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ..
+    environment:
+      NODE_ENV: production
+      PUBLIC_URL: https://${DOMAIN:-accounts.lotuspond.ai}
+      SERVED_REGIONS: ${SERVED_REGIONS:-in}
+      TRUST_PROXY: "true"
+      DIRECTORY_DATABASE_URL: postgres://accounts_directory:${DIRECTORY_DB_PASSWORD}@db:5432/accounts_directory
+      CELL_IN_DATABASE_URL: postgres://accounts_in:${CELL_IN_DB_PASSWORD}@db:5432/accounts_in
+      HYDRA_ADMIN_URL: http://hydra-admin:4445
+      ACCOUNTS_DIRECTORY_SECRET: ${ACCOUNTS_DIRECTORY_SECRET:?Set ACCOUNTS_DIRECTORY_SECRET in deploy/.env (make-secrets.sh does)}
+    networks: [edge, data, admin]
+    expose:
+      - "8790"
+    depends_on:
+      db:
+        condition: service_healthy
+      hydra:
+        condition: service_started
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2@sha256:4851e54a46b206517c574821bb5cc67f170d2156041e9fbc4c9193b45e84a75b
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-accounts.lotuspond.ai}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in deploy/.env (Let's Encrypt sends certificate notices there)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      - app
+      - hydra
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
