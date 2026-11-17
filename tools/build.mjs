@@ -1,9 +1,9 @@
-// Bundle the server into dist/index.js and the migration command into dist/db/migrate-cli.js. Dependencies stay
+// Bundle the server into dist/index.js, and the migration and client-registration commands beside it. Dependencies stay
 // external; migrations are copied next to the bundle by the Dockerfile.
 import { build } from 'esbuild';
 
 await build({
-  entryPoints: ['src/index.ts', 'src/db/migrate-cli.ts'],
+  entryPoints: ['src/index.ts', 'src/db/migrate-cli.ts', 'src/clients-cli.ts'],
   outdir: 'dist',
   outbase: 'src',
   bundle: true,

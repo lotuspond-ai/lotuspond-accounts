@@ -38,8 +38,12 @@ test('two cells may not share a database', () => {
 test('production needs https and the directory secret', () => {
   assert.throws(() => loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_URL: 'http://accounts.lotuspond.ai' }), /must be https/);
   assert.throws(() => loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_URL: 'https://accounts.lotuspond.ai' }), /ACCOUNTS_DIRECTORY_SECRET is required/);
-  const ok = loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_URL: 'https://accounts.lotuspond.ai/', ACCOUNTS_DIRECTORY_SECRET: 'a'.repeat(64) });
+  const prod = { ...base, NODE_ENV: 'production', PUBLIC_URL: 'https://accounts.lotuspond.ai/', ACCOUNTS_DIRECTORY_SECRET: 'a'.repeat(64) };
+  assert.throws(() => loadConfig(prod), /ACCOUNTS_COOKIE_SECRET is required/);
+  assert.throws(() => loadConfig({ ...prod, ACCOUNTS_COOKIE_SECRET: 'b'.repeat(64) }), /MAIL_TRANSPORT must be ses in production/);
+  const ok = loadConfig({ ...prod, ACCOUNTS_COOKIE_SECRET: 'b'.repeat(64), MAIL_TRANSPORT: 'ses' });
   assert.equal(ok.publicUrl, 'https://accounts.lotuspond.ai');
+  assert.equal(ok.secureCookies, true);
 });
 
 test('a short directory secret is refused', () => {
@@ -48,4 +52,10 @@ test('a short directory secret is refused', () => {
 
 test('a missing directory database is refused', () => {
   assert.throws(() => loadConfig({ CELL_IN_DATABASE_URL: base.CELL_IN_DATABASE_URL }), /DIRECTORY_DATABASE_URL/);
+});
+
+test('open countries are ISO codes; India by default', () => {
+  assert.deepEqual(loadConfig(base).openCountries, ['IN']);
+  assert.deepEqual(loadConfig({ ...base, OPEN_COUNTRIES: 'in, gb' }).openCountries, ['IN', 'GB']);
+  assert.throws(() => loadConfig({ ...base, OPEN_COUNTRIES: 'India' }), /ISO 3166-1/);
 });

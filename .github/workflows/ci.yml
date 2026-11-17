@@ -21,7 +21,7 @@ jobs:
       - run: npm run check
 
   stack:
-    # The whole stack (PostgreSQL, Hydra, the app, Caddy) on plain HTTP, then the M1 exit checks.
+    # The whole stack (PostgreSQL, Hydra, the app, Caddy) on plain HTTP, then the smoke checks and sign-in end to end.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +32,15 @@ jobs:
           ACME_EMAIL: local@localhost
         run: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build --wait --wait-timeout 180
       - run: tools/smoke.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Sign-in end to end, through the real Hydra
+        env:
+          ACME_EMAIL: local@localhost
+        run: tools/e2e.sh
       - name: Logs on failure
         if: failure()
         working-directory: deploy

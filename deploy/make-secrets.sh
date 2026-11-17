@@ -22,5 +22,10 @@ HYDRA_DB_PASSWORD=$(hex)
 HYDRA_SECRETS_SYSTEM=$(hex)
 HYDRA_SECRETS_COOKIE=$(hex)
 ACCOUNTS_DIRECTORY_SECRET=$(hex)
+ACCOUNTS_COOKIE_SECRET=$(hex)
+
+# Amazon SES (ap-south-1): an IAM user's keys allowed only ses:SendEmail from the verified lotuspond.ai identity.
+SES_ACCESS_KEY_ID=
+SES_SECRET_ACCESS_KEY=
 ENV
 echo "Wrote deploy/.env. Set ACME_EMAIL in it before starting on a server."

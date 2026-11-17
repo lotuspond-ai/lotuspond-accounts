@@ -87,3 +87,14 @@ export const legacyLinks = pgTable('legacy_links', {
   productUserId: text('product_user_id').notNull(),
   importedAt: createdAt(),
 }, t => [primaryKey({ columns: [t.accountId, t.product] }), uniqueIndex('legacy_links_product_user_key').on(t.product, t.productUserId)]);
+
+/**
+ * Hydra login sessions (the `sid` in ID tokens) this account has signed in with. Revoking one by sid makes Hydra send
+ * OpenID Connect back-channel logout to every product signed in from it; revoking by subject alone does not. So a
+ * password reset or change ends product sessions by revoking each row here.
+ */
+export const hydraSessions = pgTable('hydra_sessions', {
+  sid: text('sid').primaryKey(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+  createdAt: createdAt(),
+}, t => [index('hydra_sessions_account_idx').on(t.accountId)]);

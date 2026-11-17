@@ -30,6 +30,29 @@ Every image is pinned by digest.
 
 The app migrates the directory, then each cell, at start-up, and stops at the first failure. Hydra's migrations run in `hydra-migrate` before Hydra starts.
 
+### Email
+
+Production sends through Amazon SES in `ap-south-1`, from `accounts@lotuspond.ai`. Before it can:
+
+- verify the `lotuspond.ai` domain in SES, with DKIM, SPF and DMARC records;
+- move the SES account out of the sandbox;
+- create an IAM user allowed only `ses:SendEmail` from that identity, and put its keys in `SES_ACCESS_KEY_ID` and `SES_SECRET_ACCESS_KEY` in `deploy/.env`.
+
+None of this has been done yet (M6).
+
+### Registering a product
+
+Consent is accepted only for clients registered as a LotusPond product. Register one from inside the app container, which can reach Hydra's admin API:
+
+```sh
+docker compose exec app node dist/clients-cli.js register --product health --client-id lotuspond-health \
+  --redirect-uri https://health.lotuspond.ai/api/auth/accounts/callback \
+  --post-logout-uri https://health.lotuspond.ai/login \
+  --backchannel-logout-uri https://health.lotuspond.ai/api/auth/accounts/backchannel-logout
+```
+
+Repeat `--redirect-uri` and `--post-logout-uri` for each regional host. Add `--public` for a client without a secret (PKCE only). A confidential client's secret is printed once; store it in the product's own secrets.
+
 ### Secrets
 
 `make-secrets.sh` writes `deploy/.env` with fresh random values and refuses to overwrite an existing file. Losing it locks the databases and invalidates every Hydra token and cookie, so back it up as soon as it exists. Set `ACME_EMAIL` before starting on a server.

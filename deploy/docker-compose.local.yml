@@ -19,6 +19,8 @@ services:
     environment:
       NODE_ENV: development
       PUBLIC_URL: http://localhost:8080
+      # Emails stay in memory and are shown at http://localhost:8080/dev/outbox.json. Production refuses this.
+      MAIL_TRANSPORT: outbox
 
   caddy:
     ports: !override

@@ -23,7 +23,20 @@ const Env = z.object({
   HYDRA_ADMIN_URL: url.default('http://127.0.0.1:4445'),
   /** HMAC key for the email directory. Not Health's DIRECTORY_SECRET: Accounts has its own. */
   ACCOUNTS_DIRECTORY_SECRET: secret.optional(),
+  /** Signs form tokens and hashes client addresses in the audit log. */
+  ACCOUNTS_COOKIE_SECRET: secret.optional(),
   TRUST_PROXY: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
+  /** Countries whose residents can sign up, comma-separated ISO codes. India only in step 1. */
+  OPEN_COUNTRIES: z.string().default('IN'),
+  SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+  /**
+   * How email is sent. `ses`: Amazon SES (production). `outbox`: kept in memory and shown at /dev/outbox, for
+   * development and tests only; production refuses it.
+   */
+  MAIL_TRANSPORT: z.enum(['outbox', 'ses']).default('outbox'),
+  MAIL_FROM: z.string().trim().min(3).default('LotusPond Accounts <accounts@lotuspond.ai>'),
+  /** SES region. Mumbai keeps addresses and messages in India. Credentials come from the standard AWS variables. */
+  SES_REGION: z.string().trim().default('ap-south-1'),
 });
 
 export interface CellConfig { region: Region; databaseUrl: string }
@@ -37,7 +50,13 @@ export interface Config {
   cells: CellConfig[];
   hydraAdminUrl: string;
   directorySecret: string | null;
+  cookieSecret: string | null;
   trustProxy: boolean;
+  openCountries: string[];
+  sessionTtlMs: number;
+  /** Secure cookies and the __Host- prefix: on whenever PUBLIC_URL is https. */
+  secureCookies: boolean;
+  mail: { transport: 'outbox' | 'ses'; from: string; sesRegion: string };
 }
 
 export class ConfigError extends Error {}
@@ -78,6 +97,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (e.NODE_ENV === 'production') {
     if (!e.PUBLIC_URL.startsWith('https://')) throw new ConfigError('Invalid configuration: PUBLIC_URL must be https in production.');
     if (!e.ACCOUNTS_DIRECTORY_SECRET) throw new ConfigError('Invalid configuration: ACCOUNTS_DIRECTORY_SECRET is required in production.');
+    if (!e.ACCOUNTS_COOKIE_SECRET) throw new ConfigError('Invalid configuration: ACCOUNTS_COOKIE_SECRET is required in production.');
+    if (e.MAIL_TRANSPORT !== 'ses') throw new ConfigError('Invalid configuration: MAIL_TRANSPORT must be ses in production; the outbox is for development and tests.');
+  }
+  const openCountries = e.OPEN_COUNTRIES.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+  for (const c of openCountries) {
+    if (!/^[A-Z]{2}$/.test(c)) throw new ConfigError(`Invalid configuration: OPEN_COUNTRIES has "${c}"; use ISO 3166-1 alpha-2 codes.`);
   }
 
   return {
@@ -89,7 +114,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cells,
     hydraAdminUrl: e.HYDRA_ADMIN_URL.replace(/\/+$/, ''),
     directorySecret: e.ACCOUNTS_DIRECTORY_SECRET ?? null,
+    cookieSecret: e.ACCOUNTS_COOKIE_SECRET ?? null,
     trustProxy: e.TRUST_PROXY,
+    openCountries,
+    sessionTtlMs: e.SESSION_DAYS * 24 * 60 * 60 * 1000,
+    secureCookies: e.PUBLIC_URL.startsWith('https://'),
+    mail: { transport: e.MAIL_TRANSPORT, from: e.MAIL_FROM, sesRegion: e.SES_REGION },
   };
 }
 

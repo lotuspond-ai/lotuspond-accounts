@@ -20,7 +20,7 @@ test('the directory and the cell each get only their own tables', async () => {
   try {
     assert.deepEqual(await tables(dbs.directory), ['directory', 'product_clients']);
     assert.deepEqual(await tables(dbs.cells.get('in')!), [
-      'accounts', 'audit_events', 'credentials', 'email_tokens', 'legacy_links', 'product_sign_ins', 'sessions',
+      'accounts', 'audit_events', 'credentials', 'email_tokens', 'hydra_sessions', 'legacy_links', 'product_sign_ins', 'sessions',
     ]);
   } finally {
     await dbs.close();
@@ -31,7 +31,7 @@ test('migrating twice changes nothing', async () => {
   const db = await openDatabase({ pglite: true });
   const dbs = await openDatabases(config, async () => db);
   await openDatabases(config, async () => db);
-  assert.equal((await tables(db)).length, 9);
+  assert.equal((await tables(db)).length, 10);
   await dbs.close();
 });
 

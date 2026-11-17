@@ -7,7 +7,15 @@ The one LotusPond account for LotusPond Health and LotusPond Works, at `accounts
 
 ## Status
 
-**M1 of step 1: the skeleton.** It serves Hydra's OpenID Connect discovery and keys, and a health check. Nobody can sign up or sign in yet: the sign-up, sign-in, email and Hydra login and consent pages are M2. It has not been deployed anywhere; see [`docs/validation/`](docs/validation/) for what has been checked and where.
+**M2 of step 1: sign-up and sign-in work locally.** People can create an account, confirm their email, sign in, reset or change their password and sign out, and LotusPond products sign them in through Hydra with single sign-on. It has not been deployed anywhere, and no email has been sent through Amazon SES yet; see [`docs/validation/`](docs/validation/) for what has been checked and where.
+
+What a product gets:
+
+- **Authorization code with PKCE (S256 only).** Hydra refuses `plain` and a missing challenge.
+- **ID token claims:** `sub`, `email` and `email_verified` (with the `email` scope), `name` (with `profile`), and always `region`, `amr` and `sid`.
+- **Single sign-on:** a browser signed in once goes straight through, `prompt=none` included.
+- **Sign-out:** RP-initiated logout (with `id_token_hint` when the product wants to be sent back), and back-channel logout to every product when someone signs out, resets or changes their password.
+- **Only LotusPond products.** Consent is accepted only for clients registered with `clients-cli`; anything else gets `access_denied`.
 
 ## How it fits together
 
@@ -29,12 +37,16 @@ npm install
 npm run check        # typecheck, lint, tests (no database or Docker needed)
 ```
 
+`npm test` runs every sign-in path against the real schema (in-memory PostgreSQL) with a stand-in for Hydra's admin API. `tools/e2e.sh` runs the protocol end to end against the real Hydra in the local stack.
+
 The whole stack, on plain HTTP at http://localhost:8080:
 
 ```sh
 deploy/make-secrets.sh
 cd deploy && ACME_EMAIL=local@localhost docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build --wait
-cd .. && tools/smoke.sh
+cd .. && tools/smoke.sh && tools/e2e.sh
 ```
+
+Emails go to an in-memory outbox locally: http://localhost:8080/dev/outbox.json. Production refuses the outbox and sends through Amazon SES.
 
 After a schema change in `src/db/*-schema.ts`, run `npm run db:generate` and review the SQL it writes to `drizzle/`.

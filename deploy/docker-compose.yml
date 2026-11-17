@@ -87,6 +87,14 @@ services:
       CELL_IN_DATABASE_URL: postgres://accounts_in:${CELL_IN_DB_PASSWORD}@db:5432/accounts_in
       HYDRA_ADMIN_URL: http://hydra-admin:4445
       ACCOUNTS_DIRECTORY_SECRET: ${ACCOUNTS_DIRECTORY_SECRET:?Set ACCOUNTS_DIRECTORY_SECRET in deploy/.env (make-secrets.sh does)}
+      ACCOUNTS_COOKIE_SECRET: ${ACCOUNTS_COOKIE_SECRET:?Set ACCOUNTS_COOKIE_SECRET in deploy/.env (make-secrets.sh does)}
+      OPEN_COUNTRIES: ${OPEN_COUNTRIES:-IN}
+      # Email through Amazon SES in Mumbai. The SES credentials are an IAM user's keys allowed only ses:SendEmail.
+      MAIL_TRANSPORT: ses
+      MAIL_FROM: ${MAIL_FROM:-LotusPond Accounts <accounts@lotuspond.ai>}
+      SES_REGION: ap-south-1
+      AWS_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY:-}
     networks: [edge, data, admin]
     expose:
       - "8790"
