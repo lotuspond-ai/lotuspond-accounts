@@ -1,9 +1,10 @@
 name: CI
 
+# On every push, not on pull_request: in this organization, pull_request runs end within seconds without a runner
+# (no logs), in lotuspond-health too, while push and manual runs work. Restore pull_request once that is fixed.
 on:
-  pull_request:
   push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
