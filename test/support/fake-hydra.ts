@@ -15,9 +15,9 @@ export class FakeHydra implements Hydra {
   revoked: string[] = [];
   isReady = true;
 
-  newLogin(o: Partial<LoginRequest> & { clientId?: string; prompt?: string } = {}): string {
+  newLogin(o: Partial<LoginRequest> & { clientId?: string; prompt?: string; screenHint?: string } = {}): string {
     const c = challenge('login');
-    const q = new URLSearchParams({ client_id: o.clientId ?? 'lotuspond-health', ...(o.prompt ? { prompt: o.prompt } : {}) });
+    const q = new URLSearchParams({ client_id: o.clientId ?? 'lotuspond-health', ...(o.prompt ? { prompt: o.prompt } : {}), ...(o.screenHint ? { screen_hint: o.screenHint } : {}) });
     this.logins.set(c, {
       challenge: c, skip: false, subject: '', requested_scope: ['openid', 'email'], session_id: `sid-${c}`,
       request_url: `http://localhost:8080/oauth2/auth?${q}`, ...o, client: { client_id: o.clientId ?? 'lotuspond-health' },

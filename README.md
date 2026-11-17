@@ -12,9 +12,11 @@ The one LotusPond account for LotusPond Health and LotusPond Works, at `accounts
 What a product gets:
 
 - **Authorization code with PKCE (S256 only).** Hydra refuses `plain` and a missing challenge.
-- **ID token claims:** `sub`, `email` and `email_verified` (with the `email` scope), `name` (with `profile`), and always `region`, `amr` and `sid`.
+- **ID token claims:** `sub`, `email` and `email_verified` (with the `email` scope), `name` (with `profile`), and always `region`, `amr` and `sid`. A company-managed account will also carry `org`, naming its organisation (ADR-0001, decision 7; the owner confirmed the name on 2026-11-17). Step 1 has no managed accounts, so no token carries it yet.
+- **Sign-up:** a product that wants the sign-up page sends `screen_hint=signup`. Hydra refuses OpenID Connect's `prompt=create`.
 - **Single sign-on:** a browser signed in once goes straight through, `prompt=none` included.
-- **Sign-out:** RP-initiated logout (with `id_token_hint` when the product wants to be sent back), and back-channel logout to every product when someone signs out, resets or changes their password.
+- **Sign-out:** RP-initiated logout, and back-channel logout to every product when someone signs out, resets or changes their password.
+- **Sending people back after sign-out needs `id_token_hint`.** Hydra refuses `post_logout_redirect_uri` without it, and accepts an expired ID token as the hint, so a product keeps each session's ID token for as long as the session.
 - **Only LotusPond products.** Consent is accepted only for clients registered with `clients-cli`; anything else gets `access_denied`.
 
 ## How it fits together

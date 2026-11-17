@@ -21,7 +21,7 @@ const pkce = (): Pkce => {
   return { verifier, challenge: b64url(createHash('sha256').update(verifier).digest()) };
 };
 
-function authorizeUrl(o: { client?: string; pkce?: Pkce | null; method?: string; prompt?: string; nonce?: string; scope?: string }): string {
+function authorizeUrl(o: { client?: string; pkce?: Pkce | null; method?: string; prompt?: string; nonce?: string; scope?: string; extra?: Record<string, string> }): string {
   const q = new URLSearchParams({
     client_id: o.client ?? CLIENT, response_type: 'code', redirect_uri: REDIRECT,
     scope: o.scope ?? 'openid email', state: b64url(randomBytes(12)), nonce: o.nonce ?? b64url(randomBytes(12)),
@@ -32,6 +32,7 @@ function authorizeUrl(o: { client?: string; pkce?: Pkce | null; method?: string;
     q.set('code_challenge_method', o.method ?? 'S256');
   }
   if (o.prompt) q.set('prompt', o.prompt);
+  for (const [k, v] of Object.entries(o.extra ?? {})) q.set(k, v);
   return `/oauth2/auth?${q}`;
 }
 
@@ -181,4 +182,10 @@ test('Hydra refuses a return address after sign-out without the ID token as a hi
   const q = new URLSearchParams({ client_id: CLIENT, post_logout_redirect_uri: AFTER_LOGOUT });
   const res = await browser().get(`/oauth2/sessions/logout?${q}`);
   assert.match(res.headers.get('location') ?? '', /\/error\?error=invalid_request/);
+});
+
+test('screen_hint=signup opens the sign-up page; Hydra refuses prompt=create, so products must not send it', async () => {
+  const signup = await run(browser(), authorizeUrl({ extra: { screen_hint: 'signup' } }));
+  assert.equal(signup.status, 200);
+  assert.match(await signup.text(), /Create your LotusPond account\./);
 });

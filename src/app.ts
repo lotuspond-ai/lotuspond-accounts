@@ -171,6 +171,18 @@ export function createApp(deps: Deps) {
     await Promise.all(sids.map(sid => hydra.revokeSession(sid).catch(() => {})));
   };
 
+  /**
+   * Does the product want the sign-up page? Hydra refuses OpenID Connect's prompt=create, so products send
+   * screen_hint=signup, which Hydra passes through in the request.
+   */
+  const wantsSignUp = (req: LoginRequest): boolean => {
+    try {
+      return new URL(req.request_url).searchParams.get('screen_hint') === 'signup';
+    } catch {
+      return false;
+    }
+  };
+
   /** Does this login request insist on a fresh password (prompt=login or max_age)? */
   const wantsFreshLogin = (req: LoginRequest): boolean => {
     try {
@@ -262,6 +274,7 @@ export function createApp(deps: Deps) {
     }
     const signedIn = await signedInAccount(c);
     if (signedIn?.account.emailVerifiedAt && !wantsFreshLogin(req)) return finishLogin(c, challenge, signedIn.account);
+    if (wantsSignUp(req)) return c.redirect(`/signup?login_challenge=${encodeURIComponent(challenge)}`, 302);
     return page(c, pages.signIn({ csrf: formToken(c), challenge, product, email: req.oidc_context?.login_hint }));
   }));
 

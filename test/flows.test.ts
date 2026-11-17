@@ -182,6 +182,17 @@ test('an Accounts session signs in to a product without a password, unless the p
   assert.match(await fresh.text(), /Sign in\./);
 });
 
+test('a product that sends screen_hint=signup opens the sign-up page; a signed-in browser still goes straight through', async () => {
+  h = await harness();
+  const challenge = h.hydra.newLogin({ screenHint: 'signup' });
+  const res = await h.browser().get(`/login?login_challenge=${challenge}`);
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get('location'), `/signup?login_challenge=${challenge}`);
+  const b = h.browser();
+  await verifiedAccount(b);
+  assert.equal((await b.get(`/login?login_challenge=${h.hydra.newLogin({ screenHint: 'signup' })}`)).status, 303);
+});
+
 test('an expired or unknown challenge shows a page that says to start again', async () => {
   h = await harness();
   const res = await h.browser().get('/login?login_challenge=login00000000-gone');
