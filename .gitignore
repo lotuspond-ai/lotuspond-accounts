@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+deploy/.env
+*.log
+health/
+deploy/backups/
+deploy/.env.before-restore-*

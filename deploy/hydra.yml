@@ -1,0 +1,71 @@
+# Ory Hydra: the OpenID Connect provider behind accounts.lotuspond.ai (ADR-0001, decision 12). Hydra stores no users;
+# it asks the Accounts app to sign people in (urls.login) and to approve what a client gets (urls.consent).
+# Secrets and the database come from the environment (DSN, SECRETS_SYSTEM, SECRETS_COOKIE), never from this file.
+# The issuer and URLs below are production's; docker-compose.local.yml overrides them for a local run.
+serve:
+  public:
+    host: 0.0.0.0
+    port: 4444
+    # Caddy terminates TLS on the edge network and forwards X-Forwarded-Proto.
+    tls:
+      allow_termination_from:
+        - 172.31.251.0/24
+  admin:
+    # Bound only to Hydra's address on the private admin network: no other container, and nothing outside the
+    # server, can reach the admin API (docker-compose.yml, networks.admin).
+    host: 172.31.250.2
+    port: 4445
+  cookies:
+    # Lax, not Strict: a sign-in can start on another site (an AI agent's connect button) and must still find its
+    # session at the end of the redirect chain.
+    same_site_mode: Lax
+
+urls:
+  self:
+    issuer: https://accounts.lotuspond.ai
+    public: https://accounts.lotuspond.ai
+  login: https://accounts.lotuspond.ai/login
+  consent: https://accounts.lotuspond.ai/consent
+  logout: https://accounts.lotuspond.ai/logout
+  error: https://accounts.lotuspond.ai/error
+  post_logout_redirect: https://accounts.lotuspond.ai/signed-out
+
+oauth2:
+  pkce:
+    # Every client, confidential or public, must use PKCE (S256).
+    enforced: true
+  expose_internal_errors: false
+
+strategies:
+  access_token: opaque
+
+ttl:
+  login_consent_request: 30m
+  access_token: 1h
+  refresh_token: 720h
+  id_token: 1h
+  auth_code: 10m
+
+oidc:
+  subject_identifiers:
+    supported_types:
+      - public
+  dynamic_client_registration:
+    enabled: false
+
+webfinger:
+  oidc_discovery:
+    supported_scope:
+      - lotuspond:region
+    supported_claims:
+      - email
+      - email_verified
+      - name
+      - region
+      - amr
+
+log:
+  level: info
+  format: json
+  # Never log tokens, codes or cookies.
+  leak_sensitive_values: false

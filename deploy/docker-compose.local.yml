@@ -1,0 +1,31 @@
+# Local run on one machine, over plain HTTP at http://localhost:8080. Never use it on a server.
+#   cd deploy && ./make-secrets.sh
+#   ACME_EMAIL=local@localhost docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# (ACME_EMAIL is required by docker-compose.yml but unused here: Caddy gets no certificate for plain HTTP.)
+services:
+  hydra:
+    # --dev allows an http issuer. It disables Hydra's production safety checks, so it stays out of docker-compose.yml.
+    command: ["serve", "all", "--config", "/etc/hydra/hydra.yml", "--sqa-opt-out", "--dev"]
+    environment:
+      URLS_SELF_ISSUER: http://localhost:8080
+      URLS_SELF_PUBLIC: http://localhost:8080
+      URLS_LOGIN: http://localhost:8080/login
+      URLS_CONSENT: http://localhost:8080/consent
+      URLS_LOGOUT: http://localhost:8080/logout
+      URLS_ERROR: http://localhost:8080/error
+      URLS_POST_LOGOUT_REDIRECT: http://localhost:8080/signed-out
+
+  app:
+    environment:
+      NODE_ENV: development
+      PUBLIC_URL: http://localhost:8080
+      # Emails stay in memory and are shown at http://localhost:8080/dev/outbox.json. Production refuses this.
+      MAIL_TRANSPORT: outbox
+
+  caddy:
+    ports: !override
+      - "127.0.0.1:8080:8080"
+    volumes: !override
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config

@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  stack:
+    # The whole stack (PostgreSQL, Hydra, the app, Caddy) on plain HTTP, then the smoke checks and sign-in end to end.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: deploy/make-secrets.sh
+      - name: Start the stack
+        working-directory: deploy
+        env:
+          ACME_EMAIL: local@localhost
+        run: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build --wait --wait-timeout 180
+      - run: tools/smoke.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Sign-in end to end, through the real Hydra
+        env:
+          ACME_EMAIL: local@localhost
+        run: tools/e2e.sh
+      - name: Restore drill (destroys the stack, then restores it from an encrypted backup)
+        env:
+          ACME_EMAIL: local@localhost
+        run: |
+          sudo apt-get install -y -q age
+          tools/restore-drill.sh
+      - name: Logs on failure
+        if: failure()
+        working-directory: deploy
+        env:
+          ACME_EMAIL: local@localhost
+        run: docker compose -f docker-compose.yml -f docker-compose.local.yml logs --no-color
+
+  health:
+    # LotusPond Health signing in with the real Accounts and Hydra (build plan M3), from a lotuspond-health ref.
+    runs-on: ubuntu-latest
+    env:
+      # Health main, which includes lotuspond-health#40 and #48.
+      HEALTH_REF: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: lotuspond-ai/lotuspond-health
+          ref: ${{ env.HEALTH_REF }}
+          path: health
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install Health
+        working-directory: health
+        run: npm ci --no-audit --no-fund
+      - run: deploy/make-secrets.sh
+      - name: Start the stack, with Hydra able to reach Health on this machine
+        working-directory: deploy
+        env:
+          ACME_EMAIL: local@localhost
+        run: docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.health.yml up -d --build --wait --wait-timeout 180
+      - name: Health signs in with Accounts, end to end
+        env:
+          ACME_EMAIL: local@localhost
+          HEALTH_DIR: health
+        run: tools/health-e2e.sh
+      - name: The switch-over rehearsal (export, import, link, both, rollback)
+        env:
+          ACME_EMAIL: local@localhost
+          HEALTH_DIR: health
+        run: tools/cutover-rehearsal.sh
+      - name: Logs on failure
+        if: failure()
+        working-directory: deploy
+        env:
+          ACME_EMAIL: local@localhost
+        run: docker compose -f docker-compose.yml -f docker-compose.local.yml logs --no-color

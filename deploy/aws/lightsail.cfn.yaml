@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: LotusPond Accounts server in Mumbai (Lightsail instance, static IP, firewall, daily snapshots). See docs/staging.md.
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [staging, production]
+    Description: Which LotusPond Accounts this server runs. Names the instance and its static IP.
+  BundleId:
+    Type: String
+    Default: small_3_1
+    AllowedValues: [small_3_1, medium_3_1]
+    Description: Mumbai plan. small_3_1 is 2 GB / 2 vCPU (staging); medium_3_1 is 4 GB / 2 vCPU (production).
+  SshCidr:
+    Type: String
+    Description: The only IPv4 range that may reach SSH, for example your own address as a.b.c.d/32.
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+  UserData:
+    Type: String
+    Description: First-boot script from first-boot.sh, rendered by create-server.sh. Holds no secret.
+Resources:
+  Server:
+    Type: AWS::Lightsail::Instance
+    Properties:
+      InstanceName: !Sub lotuspond-accounts-${Environment}-in
+      AvailabilityZone: ap-south-1a
+      BlueprintId: ubuntu_24_04
+      BundleId: !Ref BundleId
+      UserData: !Ref UserData
+      AddOns:
+        - AddOnType: AutoSnapshot
+          Status: Enabled
+          AutoSnapshotAddOnRequest:
+            SnapshotTimeOfDay: "22:00"
+      Networking:
+        Ports:
+          # SSH only from the operator's address. 80 for Let's Encrypt and the redirect to HTTPS, 443 for the site.
+          # Nothing else: Hydra's ports and PostgreSQL are never published (deploy/docker-compose.yml).
+          - {FromPort: 22, ToPort: 22, Protocol: tcp, Cidrs: [!Ref SshCidr]}
+          - {FromPort: 80, ToPort: 80, Protocol: tcp, Cidrs: ["0.0.0.0/0"], Ipv6Cidrs: ["::/0"]}
+          - {FromPort: 443, ToPort: 443, Protocol: tcp, Cidrs: ["0.0.0.0/0"], Ipv6Cidrs: ["::/0"]}
+          - {FromPort: 443, ToPort: 443, Protocol: udp, Cidrs: ["0.0.0.0/0"], Ipv6Cidrs: ["::/0"]}
+      Tags:
+        - {Key: project, Value: lotuspond-accounts}
+        - {Key: environment, Value: !Ref Environment}
+  # Email the owner when the server fails its status checks or its CPU stays high. Lightsail sends to the email contact
+  # method of this region, which is created once by hand (docs/production.md, "Alerts").
+  StatusCheckAlarm:
+    Type: AWS::Lightsail::Alarm
+    Properties:
+      AlarmName: !Sub lotuspond-accounts-${Environment}-status-check
+      MonitoredResourceName: !Ref Server
+      MetricName: StatusCheckFailed
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: 1
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      TreatMissingData: breaching
+      ContactProtocols: [Email]
+      NotificationTriggers: [ALARM, OK]
+      NotificationEnabled: true
+  CpuAlarm:
+    Type: AWS::Lightsail::Alarm
+    Properties:
+      AlarmName: !Sub lotuspond-accounts-${Environment}-cpu
+      MonitoredResourceName: !Ref Server
+      MetricName: CPUUtilization
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: 90
+      EvaluationPeriods: 6
+      DatapointsToAlarm: 6
+      TreatMissingData: missing
+      ContactProtocols: [Email]
+      NotificationTriggers: [ALARM]
+      NotificationEnabled: true
+  StaticIp:
+    Type: AWS::Lightsail::StaticIp
+    Properties:
+      StaticIpName: !Sub lotuspond-accounts-${Environment}-in-ip
+      AttachedTo: !Ref Server
+Outputs:
+  InstanceName:
+    Value: !Ref Server
+  StaticIpAddress:
+    Value: !GetAtt StaticIp.IpAddress
+  Ipv6Addresses:
+    Value: !Join [",", !GetAtt Server.Ipv6Addresses]
