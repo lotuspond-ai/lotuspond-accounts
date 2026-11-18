@@ -12,11 +12,13 @@ Parameters:
     Description: Mumbai plan. small_3_1 is 2 GB / 2 vCPU (staging); medium_3_1 is 4 GB / 2 vCPU (production).
   SshCidr:
     Type: String
-    Description: The only IPv4 range that may reach SSH, for example your own address as a.b.c.d/32.
-    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+    Description: The only IPv4 range that may reach SSH, for example your own address as a.b.c.d/32, or lightsail-connect for the Lightsail console's browser SSH only.
+    AllowedPattern: '^((\d{1,3}\.){3}\d{1,3}/\d{1,2}|lightsail-connect)$'
   UserData:
     Type: String
     Description: First-boot script from first-boot.sh, rendered by create-server.sh. Holds no secret.
+Conditions:
+  BrowserSshOnly: !Equals [!Ref SshCidr, lightsail-connect]
 Resources:
   Server:
     Type: AWS::Lightsail::Instance
@@ -33,9 +35,13 @@ Resources:
             SnapshotTimeOfDay: "22:00"
       Networking:
         Ports:
-          # SSH only from the operator's address. 80 for Let's Encrypt and the redirect to HTTPS, 443 for the site.
-          # Nothing else: Hydra's ports and PostgreSQL are never published (deploy/docker-compose.yml).
-          - {FromPort: 22, ToPort: 22, Protocol: tcp, Cidrs: [!Ref SshCidr]}
+          # SSH only from the operator's address, or only from the Lightsail console's browser SSH. 80 for Let's Encrypt
+          # and the redirect to HTTPS, 443 for the site. Nothing else: Hydra's ports and PostgreSQL are never published
+          # (deploy/docker-compose.yml).
+          - !If
+            - BrowserSshOnly
+            - {FromPort: 22, ToPort: 22, Protocol: tcp, CidrListAliases: [lightsail-connect]}
+            - {FromPort: 22, ToPort: 22, Protocol: tcp, Cidrs: [!Ref SshCidr]}
           - {FromPort: 80, ToPort: 80, Protocol: tcp, Cidrs: ["0.0.0.0/0"], Ipv6Cidrs: ["::/0"]}
           - {FromPort: 443, ToPort: 443, Protocol: tcp, Cidrs: ["0.0.0.0/0"], Ipv6Cidrs: ["::/0"]}
           - {FromPort: 443, ToPort: 443, Protocol: udp, Cidrs: ["0.0.0.0/0"], Ipv6Cidrs: ["::/0"]}

@@ -29,7 +29,15 @@ fi
 data=$(mktemp -d)
 log="$data/health.log"
 # Health runs in its own process group, so stopping it stops npx, tsx and the server under them.
-cleanup() { [ -n "${pid:-}" ] && kill -- "-$pid" 2>/dev/null || true; rm -rf "$data"; }
+# Stop Health's whole process group and wait until it has gone: its embedded database writes files while it shuts
+# down, and deleting its folder before then fails ("Directory not empty").
+cleanup() {
+  if [ -n "${pid:-}" ]; then
+    kill -- "-$pid" 2>/dev/null || true
+    for _ in $(seq 1 100); do kill -0 -- "-$pid" 2>/dev/null || break; sleep 0.1; done
+  fi
+  rm -rf "$data"
+}
 trap cleanup EXIT INT TERM
 cd "$HEALTH_DIR/server"
 NODE_ENV=development PORT=$port DATA_DIR="$data/db" PUBLIC_URL="http://localhost:$port" RECORD_AGENT=off \
