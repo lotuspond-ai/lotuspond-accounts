@@ -36,7 +36,7 @@ class Browser {
 
   async request(method: string, href: string, o: { form?: Record<string, string>; json?: unknown; headers?: Record<string, string> } = {}): Promise<Response> {
     const url = new URL(href);
-    const headers: Record<string, string> = { cookie: this.cookies(url), ...(o.headers ?? {}) };
+    const headers: Record<string, string> = { cookie: this.cookies(url), ...o.headers };
     let body: string | undefined;
     if (o.form) { headers['content-type'] = 'application/x-www-form-urlencoded'; headers.origin = url.origin; body = new URLSearchParams(o.form).toString(); }
     if (o.json !== undefined) { headers['content-type'] = 'application/json'; body = JSON.stringify(o.json); }

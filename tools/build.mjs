@@ -3,7 +3,7 @@
 import { build } from 'esbuild';
 
 await build({
-  entryPoints: ['src/index.ts', 'src/db/migrate-cli.ts', 'src/clients-cli.ts'],
+  entryPoints: ['src/index.ts', 'src/db/migrate-cli.ts', 'src/clients-cli.ts', 'src/accounts-cli.ts'],
   outdir: 'dist',
   outbase: 'src',
   bundle: true,

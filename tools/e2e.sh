@@ -15,4 +15,23 @@ $C exec -T hydra hydra create oauth2-client --endpoint http://172.31.250.2:4445 
   --grant-type authorization_code --response-type code --scope openid,email --redirect-uri http://localhost:9999/callback \
   --token-endpoint-auth-method none --format json >/dev/null
 cd ..
-E2E_CLIENT_ID="$product" E2E_OUTSIDE_CLIENT_ID="$outsider" node --import tsx --test --test-reporter=spec test-e2e/oidc.test.ts
+
+# The import rehearsal, with synthetic accounts only: generate a Health export, import it in the app container with the
+# real accounts-cli, and bring the answer back.
+C="docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml"
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+password="synthetic test passphrase $suffix"
+npx tsx tools/synthetic-health-export.ts 3 "$work/export.jsonl" "$password" >/dev/null
+# Streamed in and out through the app container, so the files belong to its own unprivileged user.
+$C exec -T app sh -c "umask 077 && cat > /tmp/export-$suffix.jsonl" < "$work/export.jsonl"
+$C exec -T app node dist/accounts-cli.js import /tmp/export-$suffix.jsonl /tmp/answer-$suffix.jsonl
+$C exec -T app cat /tmp/answer-$suffix.jsonl > "$work/answer.jsonl"
+$C exec -T app rm -f /tmp/export-$suffix.jsonl /tmp/answer-$suffix.jsonl
+first_id=$(head -1 "$work/export.jsonl" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).health_user_id))")
+imported_email=$(head -1 "$work/export.jsonl" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).email))")
+imported_sub=$(node -e "const l=require('fs').readFileSync('$work/answer.jsonl','utf8').trim().split('\n').map(JSON.parse);console.log(l.find(a=>a.health_user_id==='$first_id').sub)")
+
+E2E_CLIENT_ID="$product" E2E_OUTSIDE_CLIENT_ID="$outsider" \
+E2E_IMPORTED_EMAIL="$imported_email" E2E_IMPORTED_PASSWORD="$password" E2E_IMPORTED_SUB="$imported_sub" \
+  node --import tsx --test --test-reporter=spec test-e2e/oidc.test.ts test-e2e/import.test.ts

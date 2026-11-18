@@ -21,14 +21,16 @@ export class Outbox implements Mailer {
   }
 }
 
+/** Amazon SES. Sends through the environment's configuration set, which the sender's IAM policy is scoped to. */
 export class SesMailer implements Mailer {
-  private readonly client: SESv2Client;
-  constructor(private readonly from: string, region: string) {
-    this.client = new SESv2Client({ region });
+  private readonly client: Pick<SESv2Client, 'send'>;
+  constructor(private readonly from: string, region: string, private readonly configurationSet: string | null, client?: Pick<SESv2Client, 'send'>) {
+    this.client = client ?? new SESv2Client({ region });
   }
   async send(message: Message): Promise<void> {
     await this.client.send(new SendEmailCommand({
       FromEmailAddress: this.from,
+      ...(this.configurationSet ? { ConfigurationSetName: this.configurationSet } : {}),
       Destination: { ToAddresses: [message.to] },
       Content: { Simple: { Subject: { Data: message.subject, Charset: 'UTF-8' }, Body: { Text: { Data: message.text, Charset: 'UTF-8' } } } },
     }));

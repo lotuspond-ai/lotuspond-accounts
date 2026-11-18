@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: The sender for one LotusPond Accounts environment - a configuration set and an IAM user that may only send from accounts@lotuspond.ai through it. Create its access key by hand (docs/staging.md); it is never a stack output.
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [staging, production]
+Resources:
+  ConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Sub lotuspond-accounts-${Environment}
+      ReputationOptions:
+        ReputationMetricsEnabled: true
+      SendingOptions:
+        SendingEnabled: true
+      SuppressionOptions:
+        SuppressedReasons: [BOUNCE, COMPLAINT]
+  Sender:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub lotuspond-accounts-ses-${Environment}
+      Tags:
+        - {Key: project, Value: lotuspond-accounts}
+        - {Key: environment, Value: !Ref Environment}
+      Policies:
+        - PolicyName: send-only
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: SendFromAccountsOnly
+                Effect: Allow
+                Action: ses:SendEmail
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/lotuspond.ai
+                  - !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${ConfigurationSet}
+                  # In the SES sandbox, each verified recipient is an identity too.
+                  - !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: accounts@lotuspond.ai
+Outputs:
+  UserName:
+    Value: !Ref Sender
+  ConfigurationSet:
+    Value: !Ref ConfigurationSet

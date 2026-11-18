@@ -60,6 +60,15 @@ services:
       SECRETS_SYSTEM: ${HYDRA_SECRETS_SYSTEM:?Set HYDRA_SECRETS_SYSTEM in deploy/.env (make-secrets.sh does)}
       SECRETS_COOKIE: ${HYDRA_SECRETS_COOKIE:?Set HYDRA_SECRETS_COOKIE in deploy/.env (make-secrets.sh does)}
       SQA_OPT_OUT: "true"
+      # The issuer and every page Hydra sends people to follow DOMAIN, so the same files serve staging
+      # (staging.accounts.lotuspond.ai) and production. hydra.yml holds production's as defaults.
+      URLS_SELF_ISSUER: https://${DOMAIN:-accounts.lotuspond.ai}
+      URLS_SELF_PUBLIC: https://${DOMAIN:-accounts.lotuspond.ai}
+      URLS_LOGIN: https://${DOMAIN:-accounts.lotuspond.ai}/login
+      URLS_CONSENT: https://${DOMAIN:-accounts.lotuspond.ai}/consent
+      URLS_LOGOUT: https://${DOMAIN:-accounts.lotuspond.ai}/logout
+      URLS_ERROR: https://${DOMAIN:-accounts.lotuspond.ai}/error
+      URLS_POST_LOGOUT_REDIRECT: https://${DOMAIN:-accounts.lotuspond.ai}/signed-out
     volumes:
       - ./hydra.yml:/etc/hydra/hydra.yml:ro
     networks:
@@ -93,6 +102,7 @@ services:
       MAIL_TRANSPORT: ses
       MAIL_FROM: ${MAIL_FROM:-LotusPond Accounts <accounts@lotuspond.ai>}
       SES_REGION: ap-south-1
+      SES_CONFIGURATION_SET: ${SES_CONFIGURATION_SET:-}
       AWS_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY:-}
     networks: [edge, data, admin]

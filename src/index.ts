@@ -21,7 +21,7 @@ try {
 }
 
 const dbs = await openDatabases(config);
-const mailer = config.mail.transport === 'ses' ? new SesMailer(config.mail.from, config.mail.sesRegion) : new Outbox();
+const mailer = config.mail.transport === 'ses' ? new SesMailer(config.mail.from, config.mail.sesRegion, config.mail.configurationSet) : new Outbox();
 const app = createApp({
   config,
   directory: dbs.directory,

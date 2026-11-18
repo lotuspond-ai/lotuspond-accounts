@@ -37,6 +37,8 @@ const Env = z.object({
   MAIL_FROM: z.string().trim().min(3).default('LotusPond Accounts <accounts@lotuspond.ai>'),
   /** SES region. Mumbai keeps addresses and messages in India. Credentials come from the standard AWS variables. */
   SES_REGION: z.string().trim().default('ap-south-1'),
+  /** The SES configuration set for this environment (deploy/aws/ses-sender.cfn.yaml), e.g. lotuspond-accounts-staging. */
+  SES_CONFIGURATION_SET: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().trim().regex(/^[\w-]{1,64}$/).optional()),
 });
 
 export interface CellConfig { region: Region; databaseUrl: string }
@@ -56,7 +58,7 @@ export interface Config {
   sessionTtlMs: number;
   /** Secure cookies and the __Host- prefix: on whenever PUBLIC_URL is https. */
   secureCookies: boolean;
-  mail: { transport: 'outbox' | 'ses'; from: string; sesRegion: string };
+  mail: { transport: 'outbox' | 'ses'; from: string; sesRegion: string; configurationSet: string | null };
 }
 
 export class ConfigError extends Error {}
@@ -119,7 +121,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     openCountries,
     sessionTtlMs: e.SESSION_DAYS * 24 * 60 * 60 * 1000,
     secureCookies: e.PUBLIC_URL.startsWith('https://'),
-    mail: { transport: e.MAIL_TRANSPORT, from: e.MAIL_FROM, sesRegion: e.SES_REGION },
+    mail: { transport: e.MAIL_TRANSPORT, from: e.MAIL_FROM, sesRegion: e.SES_REGION, configurationSet: e.SES_CONFIGURATION_SET ?? null },
   };
 }
 

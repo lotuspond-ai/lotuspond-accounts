@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Sending identity for LotusPond Accounts email in Mumbai - the lotuspond.ai domain with Easy DKIM and a custom MAIL FROM domain. Created once and shared by staging and production. See docs/staging.md.
+Resources:
+  Domain:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: lotuspond.ai
+      DkimSigningAttributes:
+        NextSigningKeyLength: RSA_2048_BIT
+      MailFromAttributes:
+        # Bounces go to mail.lotuspond.ai, so SPF aligns with the visible From domain for DMARC.
+        MailFromDomain: mail.lotuspond.ai
+        BehaviorOnMxFailure: USE_DEFAULT_VALUE
+      FeedbackAttributes:
+        EmailForwardingEnabled: true
+Outputs:
+  # Three CNAME records to add in DNS for DKIM.
+  DkimRecord1:
+    Value: !Sub "${Domain.DkimDNSTokenName1} CNAME ${Domain.DkimDNSTokenValue1}"
+  DkimRecord2:
+    Value: !Sub "${Domain.DkimDNSTokenName2} CNAME ${Domain.DkimDNSTokenValue2}"
+  DkimRecord3:
+    Value: !Sub "${Domain.DkimDNSTokenName3} CNAME ${Domain.DkimDNSTokenValue3}"

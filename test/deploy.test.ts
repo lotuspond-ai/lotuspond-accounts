@@ -68,3 +68,15 @@ test('no secret is written into the compose file or the Hydra config', () => {
   assert.equal(hydraConfig.secrets, undefined);
   assert.equal(hydraConfig.dsn, undefined);
 });
+
+test('Hydra\'s issuer and pages follow DOMAIN, the same as the app\'s public address', () => {
+  const env = (compose.services.hydra as unknown as { environment: Record<string, string> }).environment;
+  const app = (compose.services.app as unknown as { environment: Record<string, string> }).environment;
+  const base = 'https://${DOMAIN:-accounts.lotuspond.ai}';
+  assert.equal(app.PUBLIC_URL, base);
+  assert.equal(env.URLS_SELF_ISSUER, base);
+  assert.equal(env.URLS_SELF_PUBLIC, base);
+  for (const [k, path] of [['URLS_LOGIN', '/login'], ['URLS_CONSENT', '/consent'], ['URLS_LOGOUT', '/logout'], ['URLS_ERROR', '/error'], ['URLS_POST_LOGOUT_REDIRECT', '/signed-out']]) {
+    assert.equal(env[k], base + path, k);
+  }
+});
