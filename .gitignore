@@ -6,3 +6,4 @@ deploy/.env
 health/
 deploy/backups/
 deploy/.env.before-restore-*
+placeholder/public/assets/

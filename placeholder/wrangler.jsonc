@@ -1,0 +1,12 @@
+// The placeholder at accounts.lotuspond.ai until LotusPond Accounts is deployed (placeholder/README.md).
+// Static assets only: no Worker code, no storage, no secrets. Every path shows the one page.
+{
+  "name": "lotuspond-accounts-placeholder",
+  "account_id": "a9415202683c1d7629eef5f39330aa75",
+  "compatibility_date": "2026-11-18",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": { "directory": "./public", "not_found_handling": "single-page-application" },
+  "routes": [{ "pattern": "accounts.lotuspond.ai", "custom_domain": true }],
+  "observability": { "enabled": false }
+}
