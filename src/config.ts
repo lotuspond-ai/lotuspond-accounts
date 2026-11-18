@@ -1,6 +1,7 @@
 // Configuration from the environment, checked once at start-up. A wrong setting stops the server with a message
 // that names the variable; it never starts half-configured.
 import { z } from 'zod';
+import { productUrls } from './lib/products.ts';
 
 /** Data-residency cells, the same four as LotusPond Health (ADR-0001, decision 6). */
 export const REGIONS = ['in', 'eu', 'us', 'global'] as const;
@@ -28,6 +29,8 @@ const Env = z.object({
   TRUST_PROXY: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
   /** Countries whose residents can sign up, comma-separated ISO codes. India only in step 1. */
   OPEN_COUNTRIES: z.string().default('IN'),
+  /** Each product's web address for the account page, "health=https://…,works=https://…". Unset: from PUBLIC_URL (lib/products.ts). */
+  PRODUCT_URLS: z.string().optional(),
   SESSION_DAYS: z.coerce.number().int().min(1).max(90).default(30),
   /**
    * How email is sent. `ses`: Amazon SES (production). `outbox`: kept in memory and shown at /dev/outbox, for
@@ -55,6 +58,8 @@ export interface Config {
   cookieSecret: string | null;
   trustProxy: boolean;
   openCountries: string[];
+  /** Where each product lives, for the account page's links. */
+  productUrls: Partial<Record<'health' | 'works', string>>;
   sessionTtlMs: number;
   /** Secure cookies and the __Host- prefix: on whenever PUBLIC_URL is https. */
   secureCookies: boolean;
@@ -107,6 +112,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (!/^[A-Z]{2}$/.test(c)) throw new ConfigError(`Invalid configuration: OPEN_COUNTRIES has "${c}"; use ISO 3166-1 alpha-2 codes.`);
   }
 
+  let productLinks: Partial<Record<'health' | 'works', string>>;
+  try { productLinks = productUrls(e.PUBLIC_URL, e.PRODUCT_URLS); } catch (err) { throw new ConfigError(`Invalid configuration: ${(err as Error).message}`); }
+
   return {
     env: e.NODE_ENV,
     port: e.PORT,
@@ -119,6 +127,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cookieSecret: e.ACCOUNTS_COOKIE_SECRET ?? null,
     trustProxy: e.TRUST_PROXY,
     openCountries,
+    productUrls: productLinks,
     sessionTtlMs: e.SESSION_DAYS * 24 * 60 * 60 * 1000,
     secureCookies: e.PUBLIC_URL.startsWith('https://'),
     mail: { transport: e.MAIL_TRANSPORT, from: e.MAIL_FROM, sesRegion: e.SES_REGION, configurationSet: e.SES_CONFIGURATION_SET ?? null },

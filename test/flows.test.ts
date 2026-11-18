@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { accounts, auditEvents, emailTokens, hydraSessions, productSignIns, sessions } from '../src/db/cell-schema.ts';
-import { directory } from '../src/db/directory-schema.ts';
+import { directory, productClients } from '../src/db/directory-schema.ts';
 import { csrfOf, linkIn, type Browser } from './support/browser.ts';
 import { harness } from './support/harness.ts';
 
@@ -350,15 +350,40 @@ test('changing the password needs the current one, keeps this session and revoke
   assert.equal((await other.get('/account')).status, 302, 'other browsers are signed out');
 });
 
-test('the account page needs a session, and shows connected products after consent', async () => {
-  h = await harness();
+/** One product's card on the account page. */
+const card = (page: string, product: string) => new RegExp(`<li class="product" aria-labelledby="product-${product}">([\\s\\S]*?)</li>`).exec(page)?.[1] ?? '';
+
+test('the account page needs a session, and shows each product, connected or not, after consent', async () => {
+  h = await harness({ PRODUCT_URLS: 'health=https://health.example,works=https://works.example' });
   assert.equal((await h.browser().get('/account')).status, 302);
   const b = h.browser();
   const account = await verifiedAccount(b);
-  await h.browser().get(`/consent?consent_challenge=${h.hydra.newConsent({ subject: account.id })}`);
-  const page = await (await b.get('/account')).text();
-  assert.match(page, /LotusPond Health/);
+  let page = await (await b.get('/account')).text();
   assert.match(page, /asha@example.com/);
+  assert.match(page, /Not connected to a product yet/);
+  for (const p of ['health', 'works']) assert.match(card(page, p), /Not used yet/, p);
+
+  await h.browser().get(`/consent?consent_challenge=${h.hydra.newConsent({ subject: account.id })}`);
+  page = await (await b.get('/account')).text();
+  assert.match(page, /Connected to one product/);
+  const health = card(page, 'health');
+  assert.match(health, /<h3 id="product-health">LotusPond Health<\/h3><span class="tag">Connected<\/span>/);
+  assert.match(health, /First used<\/dt><dd>\d{1,2} [A-Z][a-z]{2} \d{4}<\/dd>/);
+  assert.match(health, /Last signed in/);
+  assert.match(health, /<a class="product__open" href="https:\/\/health.example">Open LotusPond Health/);
+  assert.match(card(page, 'works'), /Not used yet/);
+  assert.match(page, /receives your email, your name and the region/);
+});
+
+test('a product with no client registered yet shows as not available, with no link', async () => {
+  h = await harness({ PRODUCT_URLS: 'health=https://health.example,works=https://works.example' });
+  await h.dbs.directory.db.delete(productClients).where(eq(productClients.product, 'works'));
+  const b = h.browser();
+  await verifiedAccount(b);
+  const works = card(await (await b.get('/account')).text(), 'works');
+  assert.match(works, /Not available yet/);
+  assert.match(works, /does not sign in with this account yet/);
+  assert.doesNotMatch(works, /product__open/);
 });
 
 /* ---------- consent ---------- */
@@ -444,4 +469,21 @@ test('no email address or token is written to the audit log', async () => {
   const rows = JSON.stringify(await cell().select().from(auditEvents));
   assert.doesNotMatch(rows, /asha@example\.com|127\.0\.0\.1/);
   assert.deepEqual(new Set((await cell().select().from(auditEvents)).map(e => e.kind)), new Set(['account_created', 'email_verified', 'sign_in_failed']));
+});
+
+test('the console: Products, Profile and Security each need a session and mark their own place in the navigation', async () => {
+  h = await harness();
+  for (const path of ['/account', '/account/profile', '/account/security']) assert.equal((await h.browser().get(path)).status, 302, path);
+  const b = h.browser();
+  await verifiedAccount(b);
+  for (const [path, label] of [['/account', 'Products'], ['/account/profile', 'Profile'], ['/account/security', 'Security']]) {
+    const page = await (await b.get(path)).text();
+    assert.match(page, new RegExp(`<h1 class="screen-title">${label}</h1>`), path);
+    assert.match(page, new RegExp(`aria-current="page"><svg[^>]*>[\\s\\S]*?</svg><span>${label}</span>`), path);
+    assert.equal((page.match(/aria-current="page"/g) ?? []).length, 1, path);
+    assert.match(page, /action="\/account\/sign-out"/, `${path}: signing out is always at hand`);
+  }
+  const profile = await (await b.get('/account/profile')).text();
+  const renamed = await b.post('/account/name', { csrf: csrfOf(profile), name: 'Asha R.' });
+  assert.match(await renamed.text(), /<h1 class="screen-title">Profile<\/h1>[\s\S]*Name saved\./, 'saving a name stays on Profile');
 });
