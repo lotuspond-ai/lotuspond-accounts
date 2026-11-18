@@ -249,3 +249,57 @@ test('the app signs in through the system browser and trades its one-time code f
   const who = await fetch(`${HEALTH}/api/auth/me`, { headers: { authorization: `Bearer ${token}`, 'x-lotuspond-client': 'app' } });
   assert.equal(((await who.json()) as { account: { email: string } }).account.email, email);
 });
+
+test('the app signs out of Health and, through the system browser, of Accounts too, then hands back to the app', async () => {
+  const verifier = randomBytes(32).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const email = unique('health-app-out');
+  // The system browser holds the Accounts session; the app holds only Health's bearer token.
+  const sys = new Browser();
+  const start = `${HEALTH}/api/auth/accounts/start?intent=signup&client=app&code_challenge=${challenge}`;
+  const atAccounts = await sys.follow(await sys.get(start), start);
+  const page = await atAccounts.res.text();
+  const loginChallenge = hiddenValue(page, 'login_challenge')!;
+  const check = await (await sys.request('POST', `${ACCOUNTS}/signup`, {
+    form: { csrf: csrfOf(page), login_challenge: loginChallenge, email, name: 'Asha Rao', password: PASSWORD, country: 'IN', accept_terms: 'yes' },
+  })).text();
+  const link = await outbox(email, /verify-email/);
+  const confirm = await (await sys.get(link.href)).text();
+  await sys.request('POST', `${ACCOUNTS}/verify-email`, { form: { csrf: csrfOf(confirm), token: link.searchParams.get('token')! } });
+  const handOff = await sys.follow(await sys.request('POST', `${ACCOUNTS}/login/continue`, { form: { csrf: csrfOf(check), login_challenge: loginChallenge } }), `${ACCOUNTS}/login/continue`);
+  const code = /[?&]code=([\w-]+)/.exec((await handOff.res.text()).replace(/&amp;/g, '&'))![1];
+  const app = (method: string, path: string, body?: unknown, token?: string) => fetch(`${HEALTH}${path}`, {
+    method,
+    headers: { 'content-type': 'application/json', 'x-lotuspond-client': 'app', origin: 'capacitor://localhost', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const { pendingToken } = (await (await app('POST', '/api/auth/accounts/app-exchange', { code, verifier })).json()) as { pendingToken: string };
+  const { token } = (await (await app('POST', '/api/auth/accounts/complete', { ...finish, pendingToken })).json()) as { token: string };
+  assert.ok(token);
+
+  // The app signs out of Health, and gets an address to open in the system browser.
+  const out = await app('POST', '/api/auth/logout', undefined, token);
+  const { accountsSignOut } = (await out.json()) as { accountsSignOut: string };
+  assert.match(accountsSignOut, new RegExp(`^${HEALTH}/api/auth/accounts/sign-out\\?ticket=`));
+  assert.equal(await (await app('GET', '/api/auth/me', undefined, token)).json(), null, 'the app\'s token no longer works');
+
+  const toAccounts = await sys.get(accountsSignOut);
+  const end = new URL(toAccounts.headers.get('location')!);
+  assert.equal(end.origin, ACCOUNTS);
+  assert.ok(end.searchParams.get('id_token_hint'), 'the app session\'s ID token goes as the hint');
+  assert.equal(end.searchParams.get('post_logout_redirect_uri'), `${HEALTH}/api/auth/accounts/signed-out`);
+  const confirmOut = await sys.follow(await sys.get(end.href), end.href);
+  const outPage = await confirmOut.res.text();
+  assert.match(outPage, /Sign out of LotusPond\?/);
+  const back = await sys.follow(await sys.request('POST', `${ACCOUNTS}/logout`, {
+    form: { csrf: csrfOf(outPage), logout_challenge: hiddenValue(outPage, 'logout_challenge')!, action: 'sign_out' },
+  }), `${ACCOUNTS}/logout`);
+  assert.equal(`${back.url.origin}${back.url.pathname}`, `${HEALTH}/api/auth/accounts/signed-out`);
+  const handBack = await back.res.text();
+  assert.match(handBack, /ai\.lotuspond\.health:\/accounts\?signed_out=1/, 'the page hands back to the app');
+
+  // Signed out at Accounts too: the system browser's next sign-in asks for the password.
+  const again = `${HEALTH}/api/auth/accounts/start?intent=login&client=app&code_challenge=${challenge}`;
+  const signIn = await sys.follow(await sys.get(again), again);
+  assert.match(await signIn.res.text(), /Sign in\./);
+});
