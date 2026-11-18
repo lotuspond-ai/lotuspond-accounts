@@ -15,7 +15,7 @@ export function layout({ title, body }: Layout): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="same-origin">
 <title>${title} · LotusPond</title>
 <link rel="stylesheet" href="/assets/accounts.css">
 </head>

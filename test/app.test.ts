@@ -29,7 +29,8 @@ test('every page carries strict security headers and is never cached', async () 
     assert.doesNotMatch(csp, /unsafe-inline/, path);
     assert.match(res.headers.get('strict-transport-security') ?? '', /max-age=63072000/);
     assert.equal(res.headers.get('cache-control'), 'no-store');
-    assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+    // no-referrer would make browsers send `Origin: null` on our own form posts, which checkForm refuses.
+    assert.equal(res.headers.get('referrer-policy'), 'same-origin');
   }
 });
 
@@ -39,6 +40,10 @@ test('pages have no inline styles or scripts, which the policy would block', asy
     const page = await (await h.app.request(path)).text();
     assert.doesNotMatch(page, /\sstyle=|<style|<script|\son[a-z]+=/i, path);
     if (['/login', '/signup', '/forgot-password'].includes(path)) assert.match(page, /<label for="f-/, path);
+    // The page's own referrer policy overrides the header. no-referrer makes browsers post our forms with
+    // `Origin: null`, which the form check refuses (found on staging, 18 November 2026).
+    assert.match(page, /<meta name="referrer" content="same-origin">/, path);
+    assert.doesNotMatch(page, /no-referrer/, path);
   }
 });
 
