@@ -119,7 +119,7 @@ ACCOUNTS_CLIENT_ID=lotuspond-health-staging
 ACCOUNTS_CLIENT_SECRET=<from step 5>
 ```
 
-Health staging must run code that includes `lotuspond-health#40` and `#48`. Health's staging deploys its `development` branch. Creating that branch, and what goes on it, is the Health owner's decision.
+Health staging must run code that includes `lotuspond-health#40` and `#48`, both merged into Health's `main` on 18 November 2026. Health's staging deploys its `development` branch. Creating that branch, and what goes on it, is the Health owner's decision.
 
 ## 7. Synthetic data, and the import rehearsal
 

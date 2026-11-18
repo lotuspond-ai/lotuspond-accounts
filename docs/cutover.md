@@ -13,7 +13,7 @@ LotusPond Health's existing accounts move into LotusPond Accounts, and Health tu
 ## Gates: all must be true before starting
 
 - [ ] **The privacy review is done.** The privacy policy, the consumer health data policy, and the sign-up consent text cover Accounts processing account data (Health `docs/identity.md`, "Before launch").
-- [ ] **Health is ready.** `lotuspond-health` #40 and #48 are merged and deployed to production, with `ACCOUNTS_ISSUER` still unset, so nothing has changed for anyone yet.
+- [ ] **Health is ready.** `lotuspond-health` #40 and #48 are merged and deployed to production, with `ACCOUNTS_ISSUER` still unset, so nothing has changed for anyone yet. Both merged into `main` on 18 November 2026; the production deploy is still to do.
 - [ ] **Production Accounts is live** (M6): the restore drill is done, and an alert has reached the owner.
 - [ ] **Staging passed** the M4 checklist (`docs/staging.md`, step 8), including the import rehearsal with Health's own commands.
 - [ ] **SES is out of the sandbox,** and a confirmation email from production has arrived in a real inbox.

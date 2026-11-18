@@ -58,8 +58,8 @@ jobs:
     # LotusPond Health signing in with the real Accounts and Hydra (build plan M3), from a lotuspond-health ref.
     runs-on: ubuntu-latest
     env:
-      # lotuspond-health#48, stacked on #40. Switch to main once both are merged there.
-      HEALTH_REF: claude/sleepy-hamilton-zqrfgd
+      # Health main, which includes lotuspond-health#40 and #48.
+      HEALTH_REF: main
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
