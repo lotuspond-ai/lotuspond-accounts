@@ -112,7 +112,7 @@ Restore onto **empty volumes** only: a new server, or a scratch one for the dril
   aws lightsail create-contact-method --region ap-south-1 --protocol Email --contact-endpoint <owner mailbox>
   ```
 
-- **The site, from outside.** `.github/workflows/uptime.yml` runs `tools/staging-check.sh` every 15 minutes against the repository variable `ACCOUNTS_HOSTS`, for example `accounts.lotuspond.ai staging.accounts.lotuspond.ai`. A failed run emails whoever last changed its schedule. It runs only on the default branch, so it starts once this work is merged.
+- **The site, from outside.** `.github/workflows/uptime.yml` runs `tools/staging-check.sh` every 15 minutes against the repository variable `ACCOUNTS_HOSTS`, for example `accounts.lotuspond.ai staging.accounts.lotuspond.ai`. A failed run emails whoever last changed its schedule. It runs only on the default branch, and passes with a notice until `ACCOUNTS_HOSTS` is set.
 
 **Proving an alert reaches the owner,** which M6 requires:
 
