@@ -19,6 +19,7 @@ import { hmac, randomToken, safeEqual } from './lib/crypto.ts';
 import type { Keys } from './lib/keys.ts';
 import { RateLimiter } from './lib/rate-limit.ts';
 import { fromRoot } from './lib/paths.ts';
+import { normaliseEmail } from './lib/directory.ts';
 import { Outbox, type Mailer } from './mail/mailer.ts';
 import { resetPassword as resetMessage, verifyEmail as verifyMessage } from './mail/messages.ts';
 import * as pages from './views/pages.ts';
@@ -54,6 +55,7 @@ export function createApp(deps: Deps) {
   const service = new AccountService({ directory: deps.directory, cells: deps.cells }, keys, config.openCountries);
   const app = new Hono();
   const stylesheet = buildStylesheet();
+  const fonts = new Map(Object.entries(FONTS).map(([name, file]) => [name, fs.readFileSync(file)]));
   const origin = new URL(config.publicUrl).origin;
   const sessionCookie = config.secureCookies ? '__Host-lp_account' : 'lp_account';
   const formCookie = config.secureCookies ? '__Host-lp_form' : 'lp_form';
@@ -62,7 +64,9 @@ export function createApp(deps: Deps) {
 
   const limits = {
     signInByIp: new RateLimiter(20, 15 * MINUTE),
+    // Keyed on email and address together, so someone elsewhere cannot lock a person out of their own account.
     signInByEmail: new RateLimiter(8, 15 * MINUTE),
+    passwordByAccount: new RateLimiter(8, 15 * MINUTE),
     signUpByIp: new RateLimiter(config.env === 'production' ? 10 : 500, 60 * MINUTE),
     resetByIp: new RateLimiter(10, 60 * MINUTE),
     resetByEmail: new RateLimiter(3, 60 * MINUTE),
@@ -161,6 +165,10 @@ export function createApp(deps: Deps) {
     return row?.product ?? null;
   };
 
+  /** The product behind a sign-in challenge, or null when there is none. */
+  const productForChallenge = async (challenge: string | undefined): Promise<Product | null> =>
+    challenge ? productOf((await hydra.getLogin(challenge)).client.client_id) : null;
+
   const sendVerification = async (account: Account) => {
     const token = await service.issueToken(account, 'verify');
     await mailer.send(verifyMessage(account.email, account.name, `${config.publicUrl}/verify-email?token=${encodeURIComponent(token)}`));
@@ -231,11 +239,11 @@ export function createApp(deps: Deps) {
     return c.body(stylesheet);
   });
   app.get('/assets/fonts/:name', c => {
-    const file = FONTS[c.req.param('name')];
-    if (!file) return c.notFound();
+    const font = fonts.get(c.req.param('name'));
+    if (!font) return c.notFound();
     c.header('Content-Type', 'font/woff2');
     c.header('Cache-Control', 'public, max-age=31536000, immutable');
-    return c.body(fs.readFileSync(file));
+    return c.body(font);
   });
 
   /** Ready only when every database this server holds and Hydra answer. Reports which part failed, never why. */
@@ -282,9 +290,11 @@ export function createApp(deps: Deps) {
     const body = await form(c);
     if (!checkForm(c, body)) return refused(c);
     const challenge = isChallenge(body.login_challenge) ? body.login_challenge : undefined;
-    const product = challenge ? await productOf((await hydra.getLogin(challenge)).client.client_id) : null;
-    const email = (body.email ?? '').trim().toLowerCase();
-    const wait = Math.max(limits.signInByIp.hit(clientIp(c)), email ? limits.signInByEmail.hit(email) : 0);
+    const product = await productForChallenge(challenge);
+    const email = normaliseEmail(body.email ?? '');
+    const ip = clientIp(c);
+    const emailKey = `${email} ${ip}`;
+    const wait = Math.max(limits.signInByIp.hit(ip), email ? limits.signInByEmail.hit(emailKey) : 0);
     if (wait) return tooMany(c, wait);
     const account = email && body.password ? await service.authenticate(email, body.password, auditCtx(c)) : null;
     if (!account) {
@@ -293,7 +303,7 @@ export function createApp(deps: Deps) {
         problems: [{ field: 'form', code: 'invalid_credentials', message: 'That email and password do not match an account. Check them and try again.' }],
       }), 400);
     }
-    limits.signInByEmail.reset(email);
+    limits.signInByEmail.reset(emailKey);
     await startSession(c, account);
     if (!account.emailVerifiedAt) {
       if (!limits.verifyByAccount.hit(account.id)) await sendVerification(account);
@@ -310,7 +320,7 @@ export function createApp(deps: Deps) {
     const signedIn = await signedInAccount(c);
     if (!signedIn) return c.redirect(challenge ? `/login?login_challenge=${encodeURIComponent(challenge)}` : '/login', 303);
     if (!signedIn.account.emailVerifiedAt) {
-      const product = challenge ? await productOf((await hydra.getLogin(challenge)).client.client_id) : null;
+      const product = await productForChallenge(challenge);
       return page(c, pages.checkEmail({
         csrf: formToken(c), email: signedIn.account.email, challenge, product,
         problem: 'Your email is not confirmed yet. Open the link we sent, confirm, then choose Continue.',
@@ -324,7 +334,7 @@ export function createApp(deps: Deps) {
   app.get('/signup', c => hydraGuard(c, async () => {
     const challenge = c.req.query('login_challenge');
     const valid = isChallenge(challenge) ? challenge : undefined;
-    const product = valid ? await productOf((await hydra.getLogin(valid)).client.client_id) : null;
+    const product = await productForChallenge(valid);
     return page(c, pages.signUp({ csrf: formToken(c), challenge: valid, product, openCountries: config.openCountries }));
   }));
 
@@ -332,7 +342,7 @@ export function createApp(deps: Deps) {
     const body = await form(c);
     if (!checkForm(c, body)) return refused(c);
     const challenge = isChallenge(body.login_challenge) ? body.login_challenge : undefined;
-    const product = challenge ? await productOf((await hydra.getLogin(challenge)).client.client_id) : null;
+    const product = await productForChallenge(challenge);
     const wait = limits.signUpByIp.hit(clientIp(c));
     if (wait) return tooMany(c, wait);
     const result = await service.signUp({
@@ -375,7 +385,7 @@ export function createApp(deps: Deps) {
     const challenge = isChallenge(body.login_challenge) ? body.login_challenge : undefined;
     const signedIn = await signedInAccount(c);
     if (!signedIn) return c.redirect('/login', 303);
-    const product = challenge ? await productOf((await hydra.getLogin(challenge)).client.client_id) : null;
+    const product = await productForChallenge(challenge);
     const wait = limits.verifyByAccount.hit(signedIn.account.id);
     if (wait) return tooMany(c, wait);
     if (!signedIn.account.emailVerifiedAt) await sendVerification(signedIn.account);
@@ -389,15 +399,18 @@ export function createApp(deps: Deps) {
   app.post('/forgot-password', async c => {
     const body = await form(c);
     if (!checkForm(c, body)) return refused(c);
-    const email = (body.email ?? '').trim().toLowerCase();
+    const email = normaliseEmail(body.email ?? '');
     const wait = Math.max(limits.resetByIp.hit(clientIp(c)), email ? limits.resetByEmail.hit(email) : 0);
     if (wait) return tooMany(c, wait);
-    // The answer is the same whether or not the account exists, and is sent before the email goes out.
-    const account = email ? await service.findByEmail(email) : null;
-    if (account && account.status === 'active') {
-      void service.issueToken(account, 'reset')
-        .then(token => mailer.send(resetMessage(account.email, account.name, `${config.publicUrl}/reset-password?token=${encodeURIComponent(token)}`)))
-        .catch(() => console.error('A password reset email could not be sent.'));
+    // The answer is the same whether or not the account exists, and is sent before even the lookup runs, so its
+    // timing says nothing about the address.
+    if (email) {
+      void (async () => {
+        const account = await service.findByEmail(email);
+        if (!account || account.status !== 'active') return;
+        const token = await service.issueToken(account, 'reset');
+        await mailer.send(resetMessage(account.email, account.name, `${config.publicUrl}/reset-password?token=${encodeURIComponent(token)}`));
+      })().catch(() => console.error('A password reset email could not be sent.'));
     }
     return page(c, pages.resetSent());
   });
@@ -446,11 +459,11 @@ export function createApp(deps: Deps) {
     if (!checkForm(c, body)) return refused(c);
     const signedIn = await signedInAccount(c);
     if (!signedIn) return c.redirect('/login', 303);
-    const wait = limits.signInByEmail.hit(signedIn.account.email);
+    const wait = limits.passwordByAccount.hit(signedIn.account.id);
     if (wait) return tooMany(c, wait);
     const result = await service.changePassword(signedIn.account, body.current_password ?? '', body.new_password ?? '', { sessionDigest: signedIn.digest }, auditCtx(c));
     if ('problem' in result) return accountPage(c, signedIn.account, { passwordProblem: result.problem }, 400);
-    limits.signInByEmail.reset(signedIn.account.email);
+    limits.passwordByAccount.reset(signedIn.account.id);
     await revokeAll(result.revoke);
     return accountPage(c, signedIn.account, { notice: 'Password changed. You are signed out of LotusPond products everywhere; sign in to them again.' });
   });
