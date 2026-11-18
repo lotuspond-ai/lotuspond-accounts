@@ -7,7 +7,7 @@ The one LotusPond account for LotusPond Health and LotusPond Works, at `accounts
 
 ## Status
 
-**M2 of step 1: sign-up and sign-in work locally.** People can create an account, confirm their email, sign in, reset or change their password and sign out, and LotusPond products sign them in through Hydra with single sign-on. It has not been deployed anywhere, and no email has been sent through Amazon SES yet; see [`docs/validation/`](docs/validation/) for what has been checked and where.
+**M2 of step 1: sign-up and sign-in work locally.** People can create an account, confirm their email, sign in, reset or change their password and sign out, and LotusPond products sign them in through Hydra with single sign-on. **M3: LotusPond Health signs in with it.** Health's sign-up, sign-in, single sign-on, sign-out and the app's sign-in run end to end against this stack, and a password reset here ends Health's sessions through back-channel logout (`tools/health-e2e.sh`). It has not been deployed anywhere, and no email has been sent through Amazon SES yet; see [`docs/validation/`](docs/validation/) for what has been checked and where.
 
 What a product gets:
 
@@ -47,6 +47,12 @@ The whole stack, on plain HTTP at http://localhost:8080:
 deploy/make-secrets.sh
 cd deploy && ACME_EMAIL=local@localhost docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build --wait
 cd .. && tools/smoke.sh && tools/e2e.sh
+```
+
+To run LotusPond Health against it (a `lotuspond-health` checkout with `npm ci` done), add `-f docker-compose.health.yml` when starting the stack, then:
+
+```sh
+HEALTH_DIR=../lotuspond-health tools/health-e2e.sh
 ```
 
 Emails go to an in-memory outbox locally: http://localhost:8080/dev/outbox.json. Production refuses the outbox and sends through Amazon SES.

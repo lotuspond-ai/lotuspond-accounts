@@ -1,0 +1,6 @@
+# Local only, with docker-compose.local.yml: lets Hydra reach a LotusPond Health server running on this machine
+# (tools/health-e2e.sh), so back-channel logout is delivered to it for real. Never on a server.
+services:
+  hydra:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

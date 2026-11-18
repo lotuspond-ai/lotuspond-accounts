@@ -3,3 +3,4 @@ dist/
 .env
 deploy/.env
 *.log
+health/

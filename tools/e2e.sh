@@ -15,4 +15,4 @@ $C exec -T hydra hydra create oauth2-client --endpoint http://172.31.250.2:4445 
   --grant-type authorization_code --response-type code --scope openid,email --redirect-uri http://localhost:9999/callback \
   --token-endpoint-auth-method none --format json >/dev/null
 cd ..
-E2E_CLIENT_ID="$product" E2E_OUTSIDE_CLIENT_ID="$outsider" node --import tsx --test --test-reporter=spec test-e2e/*.test.ts
+E2E_CLIENT_ID="$product" E2E_OUTSIDE_CLIENT_ID="$outsider" node --import tsx --test --test-reporter=spec test-e2e/oidc.test.ts
