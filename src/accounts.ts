@@ -71,19 +71,21 @@ export class AccountService {
     const accountId = crypto.randomUUID();
     const secret = await hashPassword(input.password);
     if (!(await claim(this.dbs.directory.db, this.keys.directory, email, region, accountId))) return { problem: taken };
+    let account: Account;
     try {
-      const account = await db.transaction(async tx => {
+      account = await db.transaction(async tx => {
         const [a] = await tx.insert(accounts).values({ id: accountId, email, name, country, region, termsVersionAccepted: TERMS_VERSION }).returning();
         await tx.insert(credentials).values({ accountId, kind: 'password', secret });
         return a;
       });
-      await this.audit(region, accountId, 'account_created', ctx);
-      return { account };
     } catch (e) {
       await release(this.dbs.directory.db, accountId).catch(() => {});
       if (isUniqueViolation(e)) return { problem: taken };
       throw e;
     }
+    // After the commit and outside the try: a failed audit write must not release the email of an account that exists.
+    await this.audit(region, accountId, 'account_created', ctx);
+    return { account };
   }
 
   /** The account for an email and password, or null. Takes the same time whether or not the email exists. */
@@ -112,11 +114,9 @@ export class AccountService {
 
   async findById(id: string): Promise<Account | null> {
     if (!isUuid(id)) return null;
-    for (const { db } of this.dbs.cells.values()) {
-      const [account] = await db.select().from(accounts).where(eq(accounts.id, id)).limit(1);
-      if (account) return account;
-    }
-    return null;
+    const found = await Promise.all([...this.dbs.cells.values()].map(async ({ db }) =>
+      (await db.select().from(accounts).where(eq(accounts.id, id)).limit(1))[0]));
+    return found.find(Boolean) ?? null;
   }
 
   private async passwordHash(account: Account): Promise<string | null> {

@@ -94,12 +94,18 @@ export function hydraAdmin(adminUrl: string, fetchImpl: Fetch = fetch): Hydra {
   const base = `${adminUrl}/admin/oauth2/auth`;
 
   async function call<T>(what: string, method: 'GET' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-    const res = await fetchImpl(`${base}${path}`, {
-      method,
-      headers: body === undefined ? { accept: 'application/json' } : { accept: 'application/json', 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(5_000),
-    });
+    let res: Response;
+    try {
+      res = await fetchImpl(`${base}${path}`, {
+        method,
+        headers: body === undefined ? { accept: 'application/json' } : { accept: 'application/json', 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(5_000),
+      });
+    } catch {
+      // Hydra down, restarting or too slow: callers show "not available", not an unexpected error.
+      throw new HydraError(503, what);
+    }
     if (!res.ok) {
       await res.body?.cancel();
       throw new HydraError(res.status, what);
