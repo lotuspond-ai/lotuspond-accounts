@@ -1,0 +1,10 @@
+# Every two minutes, check the followed branch for a new commit.
+[Unit]
+Description=LotusPond Accounts: check for a new commit to deploy
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+
+[Install]
+WantedBy=timers.target

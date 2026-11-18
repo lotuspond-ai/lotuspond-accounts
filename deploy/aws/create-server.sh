@@ -2,18 +2,21 @@
 # Create a LotusPond Accounts server on Amazon Lightsail in Mumbai as a CloudFormation stack (lightsail.cfn.yaml), from
 # AWS CloudShell or any shell with the AWS CLI. Prints the addresses to put in DNS. See docs/staging.md.
 #   ENVIRONMENT=staging DOMAIN=staging.accounts.lotuspond.ai ACME_EMAIL=ops@lotuspond.ai SSH_CIDR=a.b.c.d/32 \
-#     REF=main bash deploy/aws/create-server.sh
+#     bash deploy/aws/create-server.sh
 set -euo pipefail
 ENVIRONMENT=${ENVIRONMENT:?Set ENVIRONMENT to staging or production}
 DOMAIN=${DOMAIN:?Set DOMAIN, e.g. staging.accounts.lotuspond.ai}
 ACME_EMAIL=${ACME_EMAIL:?Set ACME_EMAIL (Let\'s Encrypt sends certificate notices there)}
 SSH_CIDR=${SSH_CIDR:?Set SSH_CIDR to the only address allowed to SSH, e.g. a.b.c.d/32, or lightsail-connect for browser SSH only}
-REF=${REF:-main}
 REGION=ap-south-1
 STACK="lotuspond-accounts-$ENVIRONMENT-in"
 case "$ENVIRONMENT" in
-  staging) BUNDLE=small_3_1; MAIL_FROM='LotusPond Accounts (staging) <accounts@lotuspond.ai>' ;;
-  production) BUNDLE=medium_3_1; MAIL_FROM='LotusPond Accounts <accounts@lotuspond.ai>' ;;
+  # Staging runs and follows the staging branch: each new commit there deploys itself (docs/staging.md, "Deploys").
+  # Production runs main and deploys only by hand, unless DEPLOY_BRANCH names a branch for it to follow.
+  staging) BUNDLE=small_3_1; MAIL_FROM='LotusPond Accounts (staging) <accounts@lotuspond.ai>'
+    REF=${REF:-staging}; DEPLOY_BRANCH=${DEPLOY_BRANCH-staging} ;;
+  production) BUNDLE=medium_3_1; MAIL_FROM='LotusPond Accounts <accounts@lotuspond.ai>'
+    REF=${REF:-main}; DEPLOY_BRANCH=${DEPLOY_BRANCH-} ;;
   *) echo "ENVIRONMENT must be staging or production." >&2; exit 1 ;;
 esac
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -29,7 +32,8 @@ import json, sys
 script, out = sys.argv[1:]
 body = open(script).read()
 for k, v in {"__REF__": "$REF", "__DOMAIN__": "$DOMAIN", "__ACME_EMAIL__": "$ACME_EMAIL",
-             "__MAIL_FROM__": "$MAIL_FROM", "__CONFIGURATION_SET__": "lotuspond-accounts-$ENVIRONMENT"}.items():
+             "__MAIL_FROM__": "$MAIL_FROM", "__CONFIGURATION_SET__": "lotuspond-accounts-$ENVIRONMENT",
+             "__DEPLOY_BRANCH__": "$DEPLOY_BRANCH"}.items():
     body = body.replace(k, v)
 json.dump([
   {"ParameterKey": "Environment", "ParameterValue": "$ENVIRONMENT"},

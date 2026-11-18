@@ -73,16 +73,34 @@ aws lightsail create-contact-method --region ap-south-1 --protocol Email --conta
 Open the confirmation link AWS sends; alerts are delivered only after that. On 18 November 2026 this was set to `development@lotuspond.ai`.
 
 
-It builds from `main` unless `REF` names another branch.
+It runs the `staging` branch and deploys each new commit on it by itself (see [Deploys](#deploys)). `REF` and `DEPLOY_BRANCH` change either.
 
 ```sh
-ENVIRONMENT=staging DOMAIN=staging.accounts.lotuspond.ai ACME_EMAIL=<ops mailbox> SSH_CIDR=<your IPv4>/32 REF=main \
+ENVIRONMENT=staging DOMAIN=staging.accounts.lotuspond.ai ACME_EMAIL=<ops mailbox> SSH_CIDR=<your IPv4>/32 \
   bash deploy/aws/create-server.sh
 ```
 
 - **DNS:** point `staging.accounts.lotuspond.ai` at the printed static IP (A) and IPv6 address (AAAA). In Cloudflare, start with the proxy off (DNS only), so Caddy can get its certificate.
 - **`SSH_CIDR=lightsail-connect`** allows only the Lightsail console's browser SSH, for an operator without a fixed address.
-- **What the server does on first boot:** it clones the repository, makes `deploy/.env` with fresh secrets, and starts the stack. Its log is `/var/log/lotuspond-firstboot.log`.
+- **What the server does on first boot:** it clones the repository at `staging`, makes `deploy/.env` with fresh secrets, starts the stack, and turns on automatic deploys of `staging`. Its log is `/var/log/lotuspond-firstboot.log`.
+
+## Deploys
+
+The `staging` branch is what staging runs. Every two minutes the staging server checks it, and deploys a new commit by itself: it checks the commit out, rebuilds, and waits until every service reports healthy (`deploy/auto-deploy.sh`, run by the `lotuspond-accounts-auto-deploy` timer). Nothing needs inbound SSH or a secret in GitHub; the server pulls, because the repository is public.
+
+- **To deploy to staging,** merge into `staging`: a pull request into `staging`, or bring it up to `main` with a pull request from `main`.
+- **A failed deploy** leaves running whatever `docker compose` left, is not retried, and waits for the next commit on `staging`. Its log is `journalctl -u lotuspond-accounts-auto-deploy`.
+- **To deploy now,** without waiting: `sudo systemctl start lotuspond-accounts-auto-deploy`.
+- **To stop automatic deploys:** `sudo systemctl disable --now lotuspond-accounts-auto-deploy.timer`.
+- **A server made before this existed** (the staging server of 18 November 2026) turns it on once, over SSH:
+
+  ```sh
+  cd /opt/lotuspond-accounts && git fetch origin staging && git checkout --detach origin/staging
+  git rev-parse HEAD > ~/.lotuspond-accounts-deployed
+  sudo deploy/install-auto-deploy.sh staging
+  ```
+
+Production runs `main` and deploys by hand, unless it is created with `DEPLOY_BRANCH=main`. That is the owner's choice when production exists.
 
 ## 4. Finish the Accounts server
 
