@@ -97,6 +97,9 @@ test(`switch-over rehearsal: ${PHASE}`, async () => {
     const back = await a.follow(await a.request('POST', `${ACCOUNTS}/login/continue`, { form: { csrf: csrfOf(check), login_challenge: challenge } }), `${ACCOUNTS}/login/continue`, atHealthPage);
     assert.equal(back.url.origin, HEALTH);
     assert.equal((await me(a))?.account.id, facts.a.healthId, 'A is in their own Health account, linked by accounts:link');
+    // While switched on, A's old Health password opens nothing (the owner's decision of 18 November 2026).
+    const aPassword = await healthSignIn(new Browser(), facts.a);
+    assert.equal(aPassword.status, 409, 'a moved person\'s Health password is refused while Accounts sign-in is on');
 
     // B: not moved yet. Their Health password still works while passwords are on.
     const b = new Browser();
@@ -138,8 +141,8 @@ test(`switch-over rehearsal: ${PHASE}`, async () => {
   const b = new Browser();
   assert.equal((await healthSignIn(b, facts.b)).status, 200, 'B still has their Health password');
 
-  // A, linked and since reset at Accounts. Health kept A's old hash (lotuspond-health#40 keeps passwords until a
-  // reviewed migration), so the OLD Health password opens Health again, and the NEW Accounts one does not.
+  // A, linked and since reset at Accounts. Health keeps A's old hash for exactly this: refused while Accounts sign-in
+  // is on, it signs in again after a rollback. The NEW Accounts password does not open Health.
   const aOld = new Browser();
   const oldWorks = (await healthSignIn(aOld, facts.a)).status === 200;
   const aNew = new Browser();

@@ -19,9 +19,8 @@ LotusPond Health's existing accounts move into LotusPond Accounts, and Health tu
 - [ ] **SES is out of the sandbox,** and a confirmation email from production has arrived in a real inbox.
 - [ ] **Health's production client is registered** at Accounts (`docs/production.md`, step 2).
 - [ ] **The apps.** Builds with the Accounts sign-in are in the stores (M5), or the owner has chosen to switch the website first. Older apps keep working with Health passwords during `both`.
-- [ ] **The password decision below is made.**
 
-### Decision: Health's old password after a person moves
+### Decided: Health's old password after a person moves
 
 The rehearsal shows what happens today. Health (#40) keeps a person's Health password hash after they first sign in with Accounts, until a reviewed migration removes it (M9). So:
 
@@ -32,9 +31,9 @@ That means a password someone changed because it leaked still opens Health until
 
 1. **Keep the hash, as built.** Rollback is gentle, but an old or leaked Health password keeps working until M9.
 2. **Clear the hash at the first Accounts sign-in,** as the build plan proposed. The gap closes, but after a rollback moved people cannot sign in to Health at all, since Health cannot reset passwords.
-3. **Keep the hash, but refuse password sign-in for a linked account while `ACCOUNTS_ISSUER` is set.** The old password then cannot be used during `both`. It works again only after a rollback, which is short by design. This is a small change in Health.
+3. **Keep the hash, but refuse password sign-in, while `ACCOUNTS_ISSUER` is set, for a person who has signed in with Accounts.** The old password then cannot be used once they have moved. It works again only after a rollback, which is short by design. Imported people who have not signed in with Accounts yet keep their Health password, so apps without the Accounts sign-in still work for them.
 
-**Choose one before the switch-over.**
+**The owner chose option 3 on 18 November 2026.** It is built in `lotuspond-health` #48 (`users.accounts_signed_in_at`), and the rehearsal checks it. While switched on, a moved person's Health password is refused, whatever the password, and an imported person who has not moved yet keeps theirs. After a rollback, it signs in again.
 
 ## The sequence
 
@@ -99,7 +98,7 @@ Read it with Health's logs, and `journalctl` on both servers.
 On Health production, unset `ACCOUNTS_ISSUER` (and the client settings) in `deploy/.env`, then `docker compose up -d`. Accounts keeps everything, so switching on again later needs no new import. From the rehearsal:
 
 - **People who never moved:** unaffected.
-- **Moved people:** sign in with their *old Health password* (see the decision above).
+- **Moved people:** sign in with their *old Health password* again (option 3, above). A password they changed at Accounts does not work at Health.
 - **People who signed up through Accounts after the switch:** they have no Health password and **cannot sign in to Health** until Accounts sign-in is back. Keep a rollback short, and tell them.
 
 ## After the week

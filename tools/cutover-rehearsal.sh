@@ -46,7 +46,14 @@ start_health() {
   echo "Health did not start:" >&2; tail -20 "$work/health-$1.log" >&2; exit 1
 }
 health_cli() { (cd "$HEALTH_DIR/server" && env $(health_env) npx tsx src/index.ts "$@"); }
-phase() { (cd "$root" && CUTOVER_PHASE=$1 CUTOVER_FACTS="$work/facts.json" HEALTH_URL="http://localhost:$port" node --import tsx --test --test-reporter=spec test-e2e/cutover.test.ts) | grep -E '^(✔|✖)|AssertionError|ℹ (pass|fail)'; }
+phase() {
+  status=0
+  (cd "$root" && CUTOVER_PHASE=$1 CUTOVER_FACTS="$work/facts.json" HEALTH_URL="http://localhost:$port" node --import tsx --test --test-reporter=spec test-e2e/cutover.test.ts) >"$work/phase-$1.txt" 2>&1 || status=$?
+  if [ "$status" -eq 0 ]; then grep -E '^✔' "$work/phase-$1.txt"; return 0; fi
+  sed -n '/failing tests:/,$p' "$work/phase-$1.txt" >&2
+  echo "--- Health's log" >&2; tail -20 "$work"/health-*.log >&2
+  exit "$status"
+}
 
 echo "1. Health today: three people register with Health passwords."
 start_health today
