@@ -80,3 +80,17 @@ test('Hydra\'s issuer and pages follow DOMAIN, the same as the app\'s public add
     assert.equal(env[k], base + path, k);
   }
 });
+
+test('images run by the backup script are pinned by digest too', () => {
+  const script = read('deploy/backup.sh');
+  const images = [...script.matchAll(/^\s+([\w./-]+:[\w.-]+(?:@sha256:[0-9a-f]{64})?)\s*\\?$/gm)].map(m => m[1]).filter(i => i.includes('/'));
+  assert.ok(images.length > 0, 'the backup script runs an image');
+  for (const image of images) assert.match(image, /@sha256:[0-9a-f]{64}$/, image);
+});
+
+test('the server template keeps SSH to one address and alarms on status checks', () => {
+  const text = read('deploy/aws/lightsail.cfn.yaml');
+  assert.match(text, /FromPort: 22, ToPort: 22, Protocol: tcp, Cidrs: \[!Ref SshCidr\]\}/);
+  assert.doesNotMatch(text, /FromPort: (4444|4445|5432|8790)/);
+  assert.match(text, /MetricName: StatusCheckFailed/);
+});

@@ -42,6 +42,36 @@ Resources:
       Tags:
         - {Key: project, Value: lotuspond-accounts}
         - {Key: environment, Value: !Ref Environment}
+  # Email the owner when the server fails its status checks or its CPU stays high. Lightsail sends to the email contact
+  # method of this region, which is created once by hand (docs/production.md, "Alerts").
+  StatusCheckAlarm:
+    Type: AWS::Lightsail::Alarm
+    Properties:
+      AlarmName: !Sub lotuspond-accounts-${Environment}-status-check
+      MonitoredResourceName: !Ref Server
+      MetricName: StatusCheckFailed
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: 1
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      TreatMissingData: breaching
+      ContactProtocols: [Email]
+      NotificationTriggers: [ALARM, OK]
+      NotificationEnabled: true
+  CpuAlarm:
+    Type: AWS::Lightsail::Alarm
+    Properties:
+      AlarmName: !Sub lotuspond-accounts-${Environment}-cpu
+      MonitoredResourceName: !Ref Server
+      MetricName: CPUUtilization
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Threshold: 90
+      EvaluationPeriods: 6
+      DatapointsToAlarm: 6
+      TreatMissingData: missing
+      ContactProtocols: [Email]
+      NotificationTriggers: [ALARM]
+      NotificationEnabled: true
   StaticIp:
     Type: AWS::Lightsail::StaticIp
     Properties:

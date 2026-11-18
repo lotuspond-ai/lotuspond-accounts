@@ -1,0 +1,39 @@
+name: Uptime
+
+# Checks every deployed LotusPond Accounts from the outside every 15 minutes (tools/staging-check.sh): TLS, health,
+# the issuer, keys, headers, and every internal port closed. The hosts come from the repository variable
+# ACCOUNTS_HOSTS (space-separated, e.g. "accounts.lotuspond.ai staging.accounts.lotuspond.ai"). Until it is set,
+# the run passes with a notice. A failed run is GitHub's alert: it emails whoever last changed this schedule, and
+# shows on the repository's Actions page. Scheduled runs happen only on the default branch.
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+    inputs:
+      hosts:
+        description: Hosts to check now (space-separated). Empty means ACCOUNTS_HOSTS.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check each host
+        env:
+          HOSTS: ${{ inputs.hosts || vars.ACCOUNTS_HOSTS }}
+        run: |
+          if [ -z "$HOSTS" ]; then
+            echo "::notice::No hosts to check yet. Set the repository variable ACCOUNTS_HOSTS once a server is live."
+            exit 0
+          fi
+          status=0
+          for host in $HOSTS; do
+            echo "== $host"
+            tools/staging-check.sh "$host" || status=1
+          done
+          exit $status

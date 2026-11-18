@@ -4,3 +4,5 @@ dist/
 deploy/.env
 *.log
 health/
+deploy/backups/
+deploy/.env.before-restore-*

@@ -1,0 +1,12 @@
+# Nightly backup of LotusPond Accounts (deploy/backup.sh). Started by lotuspond-accounts-backup.timer.
+[Unit]
+Description=LotusPond Accounts: nightly backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/opt/lotuspond-accounts/deploy/backup.sh
+Nice=10
