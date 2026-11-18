@@ -85,7 +85,7 @@ test('the directory holds only an HMAC of the email, never the address', async (
   assert.match(row.emailHash, /^[\w-]{43}$/);
 });
 
-test('sign-up refuses a country that is not open, a weak password, no agreement, and a taken email', async () => {
+test('sign-up refuses a country that is not open, a weak password and no agreement', async () => {
   h = await harness();
   const b = h.browser();
   const gb = await signUp(b, { country: 'GB' });
@@ -93,11 +93,25 @@ test('sign-up refuses a country that is not open, a weak password, no agreement,
   assert.match(await gb.text(), /open to people living in India first/);
   assert.match(await (await signUp(b, { password: 'short' })).text(), /at least 10 characters/);
   assert.match(await (await signUp(b, { terms: false })).text(), /Agree to the LotusPond account terms/);
-  assert.equal((await signUp(b)).status, 200);
+});
+
+test('sign-up with a taken email answers as a new account would, and tells the owner by email', async () => {
+  h = await harness();
+  const first = await signUp(h.browser());
+  assert.equal(first.status, 200);
+  const firstPage = (await first.text()).replace(/name="csrf" value="[^"]*"/g, '');
+  const before = h.outbox.messages.length;
+
   const again = await signUp(h.browser(), { email: 'ASHA@example.com ' });
-  assert.equal(again.status, 400);
-  assert.match(await again.text(), /already exists/);
+  assert.equal(again.status, 200);
+  assert.match(again.headers.get('set-cookie') ?? '', /lp_account=in\./, 'a session cookie, as for a new account');
+  assert.equal((await again.text()).replace(/name="csrf" value="[^"]*"/g, ''), firstPage, 'the same page');
+
   assert.equal((await cell().select().from(accounts)).length, 1);
+  assert.equal(h.outbox.messages.length, before + 1);
+  const sent = h.outbox.latest('asha@example.com')!;
+  assert.match(sent.subject, /already have a LotusPond account/);
+  assert.match(sent.text, /\/forgot-password/);
 });
 
 test('a form posted without this browser\'s form token, or from another site, is refused', async () => {
@@ -295,6 +309,24 @@ test('a reset link also confirms the email, since it proves the mailbox', async 
   await b.post('/reset-password', { csrf: csrfOf(form), token: link.searchParams.get('token')!, password: 'a brand new passphrase' });
   const [account] = await cell().select().from(accounts);
   assert.ok(account.emailVerifiedAt);
+  // The sign-up may have been someone else's: its name and terms acceptance are dropped.
+  assert.equal(account.name, 'asha');
+  assert.equal(account.termsVersionAccepted, null);
+});
+
+test('a reset of a confirmed account keeps its name and terms', async () => {
+  h = await harness();
+  await verifiedAccount(h.browser());
+  const b = h.browser();
+  const page = await (await b.get('/forgot-password')).text();
+  await b.post('/forgot-password', { csrf: csrfOf(page), email: 'asha@example.com' });
+  await new Promise(r => setTimeout(r, 50));
+  const link = new URL(linkIn(h.outbox.latest('asha@example.com')!.text));
+  const form = await (await b.get(link.pathname + link.search)).text();
+  await b.post('/reset-password', { csrf: csrfOf(form), token: link.searchParams.get('token')!, password: 'a brand new passphrase' });
+  const [account] = await cell().select().from(accounts);
+  assert.equal(account.name, 'Asha Rao');
+  assert.ok(account.termsVersionAccepted);
 });
 
 /* ---------- the account page ---------- */

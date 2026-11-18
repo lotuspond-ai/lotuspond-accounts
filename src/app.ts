@@ -21,7 +21,7 @@ import { RateLimiter } from './lib/rate-limit.ts';
 import { fromRoot } from './lib/paths.ts';
 import { normaliseEmail } from './lib/directory.ts';
 import { Outbox, type Mailer } from './mail/mailer.ts';
-import { resetPassword as resetMessage, verifyEmail as verifyMessage } from './mail/messages.ts';
+import { accountExists as existsMessage, resetPassword as resetMessage, verifyEmail as verifyMessage } from './mail/messages.ts';
 import * as pages from './views/pages.ts';
 import { buildStylesheet } from './views/styles.ts';
 
@@ -348,6 +348,16 @@ export function createApp(deps: Deps) {
     const result = await service.signUp({
       email: body.email ?? '', password: body.password ?? '', name: body.name ?? '', country: body.country ?? '', acceptTerms: body.accept_terms === 'yes',
     }, auditCtx(c));
+    if ('taken' in result) {
+      // Answer exactly as for a new account, with a session cookie that names no session, so the page never says the
+      // email has an account. The owner hears about it by email instead.
+      const { existing, region } = result.taken;
+      setCookie(c, sessionCookie, `${region}.${randomToken()}`, { ...cookieBase, expires: new Date(Date.now() + config.sessionTtlMs) });
+      if (existing && existing.status === 'active' && !limits.verifyByAccount.hit(existing.id)) {
+        await mailer.send(existsMessage(existing.email, existing.name, `${config.publicUrl}/login`, `${config.publicUrl}/forgot-password`));
+      }
+      return page(c, pages.checkEmail({ csrf: formToken(c), email: normaliseEmail(body.email ?? ''), challenge, product }));
+    }
     if ('problem' in result) {
       const problems: Problem[] = [result.problem];
       return page(c, pages.signUp({

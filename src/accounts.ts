@@ -50,7 +50,11 @@ export class AccountService {
 
   /* ---------- sign-up and sign-in ---------- */
 
-  async signUp(input: SignUpInput, ctx: AuditContext): Promise<{ account: Account } | { problem: Problem }> {
+  /**
+   * A new account, a problem to fix, or `taken` when the email already has an account. The caller answers `taken`
+   * exactly as it answers a new account, so sign-up never says who has one (ADR-0001), and tells the owner by email.
+   */
+  async signUp(input: SignUpInput, ctx: AuditContext): Promise<{ account: Account } | { problem: Problem } | { taken: { existing: Account | null; region: Region } }> {
     const email = normaliseEmail(input.email);
     const name = input.name.trim();
     const country = input.country.trim().toUpperCase();
@@ -67,10 +71,10 @@ export class AccountService {
     if (!db) return { problem: { field: 'country', code: 'region_not_served', message: 'LotusPond accounts are not open in your region yet.' } };
     if (!input.acceptTerms) return { problem: { field: 'acceptTerms', code: 'terms_required', message: 'Agree to the LotusPond account terms to continue.' } };
 
-    const taken: Problem = { field: 'email', code: 'email_taken', message: 'An account with this email already exists. Sign in instead, or reset your password.' };
     const accountId = crypto.randomUUID();
     const secret = await hashPassword(input.password);
-    if (!(await claim(this.dbs.directory.db, this.keys.directory, email, region, accountId))) return { problem: taken };
+    const taken = async () => ({ taken: { existing: await this.findByEmail(email), region } });
+    if (!(await claim(this.dbs.directory.db, this.keys.directory, email, region, accountId))) return taken();
     let account: Account;
     try {
       account = await db.transaction(async tx => {
@@ -80,7 +84,7 @@ export class AccountService {
       });
     } catch (e) {
       await release(this.dbs.directory.db, accountId).catch(() => {});
-      if (isUniqueViolation(e)) return { problem: taken };
+      if (isUniqueViolation(e)) return taken();
       throw e;
     }
     // After the commit and outside the try: a failed audit write must not release the email of an account that exists.
@@ -196,8 +200,15 @@ export class AccountService {
       await tx.update(emailTokens).set({ usedAt: now }).where(and(eq(emailTokens.accountId, used.account.id), eq(emailTokens.purpose, 'reset'), isNull(emailTokens.usedAt)));
       await tx.delete(sessions).where(eq(sessions.accountId, used.account.id));
       const sids = await tx.delete(hydraSessions).where(eq(hydraSessions.accountId, used.account.id)).returning({ sid: hydraSessions.sid });
-      const [account] = await tx.update(accounts).set({ emailVerifiedAt: used.account.emailVerifiedAt ?? now, updatedAt: now })
-        .where(eq(accounts.id, used.account.id)).returning();
+      // A never-confirmed account made at sign-up may have been made by someone else with this email. The reset proves
+      // the mailbox, so drop what that sign-up chose: the name goes back to the address's first part (as an import
+      // does) and the terms acceptance is cleared. Imported accounts never accepted terms here and keep their name.
+      const squattable = !used.account.emailVerifiedAt && used.account.termsVersionAccepted !== null;
+      const [account] = await tx.update(accounts).set({
+        emailVerifiedAt: used.account.emailVerifiedAt ?? now,
+        updatedAt: now,
+        ...(squattable ? { name: used.account.email.split('@')[0].slice(0, 80), termsVersionAccepted: null } : {}),
+      }).where(eq(accounts.id, used.account.id)).returning();
       return { account, revoke: sids.map(s => s.sid) };
     });
     await this.audit(result.account.region, result.account.id, 'password_reset', ctx);
