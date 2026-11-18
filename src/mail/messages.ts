@@ -21,6 +21,28 @@ export function verifyEmail(to: string, name: string, link: string): Message {
   };
 }
 
+export function accountExists(to: string, name: string, signInLink: string, resetLink: string): Message {
+  return {
+    to,
+    subject: 'You already have a LotusPond account',
+    text: [
+      `Hello ${name},`,
+      '',
+      'Someone tried to create a LotusPond account with this email address. You already have one, so no new account was made.',
+      '',
+      'To sign in:',
+      signInLink,
+      '',
+      'If you forgot your password, choose a new one:',
+      resetLink,
+      '',
+      'If this was not you, ignore this email. Your account is unchanged.',
+      '',
+      'LotusPond Accounts',
+    ].join('\n'),
+  };
+}
+
 export function resetPassword(to: string, name: string, link: string): Message {
   return {
     to,
