@@ -64,6 +64,15 @@ aws sesv2 create-email-identity --region ap-south-1 --email-identity <test inbox
 
 ## 3. The Accounts staging server
 
+**First, once per region: the alert contact.** The server's two alarms email Lightsail's email contact for Mumbai. Without one, creating the server fails and rolls back ("The specified contact method Email was not found"). Lightsail keeps one email contact per region, shared by every server there, so staging and production use the same one:
+
+```sh
+aws lightsail create-contact-method --region ap-south-1 --protocol Email --contact-endpoint <ops mailbox>
+```
+
+Open the confirmation link AWS sends; alerts are delivered only after that. On 18 November 2026 this was set to `development@lotuspond.ai`.
+
+
 It builds from `main` unless `REF` names another branch.
 
 ```sh
@@ -72,6 +81,7 @@ ENVIRONMENT=staging DOMAIN=staging.accounts.lotuspond.ai ACME_EMAIL=<ops mailbox
 ```
 
 - **DNS:** point `staging.accounts.lotuspond.ai` at the printed static IP (A) and IPv6 address (AAAA). In Cloudflare, start with the proxy off (DNS only), so Caddy can get its certificate.
+- **`SSH_CIDR=lightsail-connect`** allows only the Lightsail console's browser SSH, for an operator without a fixed address.
 - **What the server does on first boot:** it clones the repository, makes `deploy/.env` with fresh secrets, and starts the stack. Its log is `/var/log/lotuspond-firstboot.log`.
 
 ## 4. Finish the Accounts server
