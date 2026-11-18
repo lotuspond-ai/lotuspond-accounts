@@ -85,7 +85,10 @@ export function createApp(deps: Deps) {
       frameAncestors: ["'none'"],
     },
     strictTransportSecurity: 'max-age=63072000; includeSubDomains',
-    referrerPolicy: 'no-referrer',
+    // same-origin, not no-referrer: no other site ever gets a referrer (an email link's token stays here), but our own
+    // forms still carry their Origin. Under no-referrer, browsers send `Origin: null` on every form post, and
+    // checkForm refuses it, so no form works in a real browser.
+    referrerPolicy: 'same-origin',
     crossOriginResourcePolicy: 'same-origin',
     crossOriginOpenerPolicy: 'same-origin',
   }));
