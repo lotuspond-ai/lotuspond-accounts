@@ -11,6 +11,7 @@ LotusPond Accounts is the one account for LotusPond Health and LotusPond Works. 
 - `test/` runs every path against the real schema with a stand-in Hydra; `test-e2e/` (via `tools/e2e.sh`) runs the protocol against the real Hydra.
 - `tools/smoke.sh` checks a running local stack; CI runs it and the end-to-end tests on every pull request.
 - `docs/validation/` records what was checked, where and when.
+- `placeholder/` is the static page at accounts.lotuspond.ai until Accounts is deployed there.
 
 ## Rules
 

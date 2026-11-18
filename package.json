@@ -14,7 +14,8 @@
     "test:e2e": "tools/e2e.sh",
     "check": "npm run typecheck && npm run lint && npm test",
     "db:generate": "drizzle-kit generate --config drizzle.directory.config.ts && drizzle-kit generate --config drizzle.cell.config.ts",
-    "db:migrate": "tsx src/db/migrate-cli.ts"
+    "db:migrate": "tsx src/db/migrate-cli.ts",
+    "placeholder:build": "tsx tools/build-placeholder.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1170.0",
