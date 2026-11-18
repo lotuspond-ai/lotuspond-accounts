@@ -64,7 +64,7 @@ aws sesv2 create-email-identity --region ap-south-1 --email-identity <test inbox
 
 ## 3. The Accounts staging server
 
-Create it once `lotuspond-ai/lotuspond-accounts#1` is merged, so `main` has the code. Before that, use `REF=claude/sleepy-hamilton-zqrfgd`.
+It builds from `main` unless `REF` names another branch.
 
 ```sh
 ENVIRONMENT=staging DOMAIN=staging.accounts.lotuspond.ai ACME_EMAIL=<ops mailbox> SSH_CIDR=<your IPv4>/32 REF=main \
