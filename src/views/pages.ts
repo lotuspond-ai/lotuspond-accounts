@@ -213,40 +213,115 @@ export function resetDone(): string {
 
 /* ---------- the account ---------- */
 
-export function accountPage(o: Form & { account: Account; products: { product: Product; lastAt: Date }[]; notice?: string; nameProblem?: Problem; passwordProblem?: Problem }): string {
+/** One LotusPond product on the account page: whether it signs in with this account yet, and this person's use of it. */
+export interface ProductCard { product: Product; url: string | null; live: boolean; firstAt: Date | null; lastAt: Date | null }
+
+/** Each product in its own words (Health's sign-in page; Works' README). */
+const PRODUCT_LINES: Record<Product, string> = {
+  health: 'Your family’s health records, ready for any AI agent.',
+  works: 'AI-agent workflows inside a company’s real processes, with a person deciding each consequential action.',
+};
+
+const day = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+function productCard(p: ProductCard): Html {
+  const name = PRODUCT_NAMES[p.product];
+  const used = !!p.firstAt;
+  // Every status is a word; colour only repeats it (design system: never tell two states apart by colour alone).
+  const status = used ? html`<span class="tag">Connected</span>`
+    : p.live ? html`<span class="tag wait">Not used yet</span>`
+      : html`<span class="tag wait">Not available yet</span>`;
+  return html`<li class="product" aria-labelledby="product-${p.product}">
+<div class="product__head"><h3 id="product-${p.product}">${name}</h3>${status}</div>
+<p class="product__line">${PRODUCT_LINES[p.product]}</p>
+${used ? html`<dl class="product__facts">
+<div><dt>First used</dt><dd>${day.format(p.firstAt!)}</dd></div>
+<div><dt>Last signed in</dt><dd>${day.format(p.lastAt!)}</dd></div>
+</dl>` : html`<p class="hint">${p.live ? html`Sign in to ${name} with this account to start using it.` : html`${name} does not sign in with this account yet.`}</p>`}
+${p.live && p.url ? html`<a class="product__open" href="${p.url}">Open ${name}<span aria-hidden="true"> →</span></a>` : null}
+</li>`;
+}
+
+export type AccountView = 'products' | 'profile' | 'security';
+
+const ICONS: Record<AccountView, Html> = {
+  products: html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>`,
+  profile: html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20c1.2-3.6 4-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></svg>`,
+  security: html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/></svg>`,
+};
+const VIEWS: { view: AccountView; label: string; href: string }[] = [
+  { view: 'products', label: 'Products', href: '/account' },
+  { view: 'profile', label: 'Profile', href: '/account/profile' },
+  { view: 'security', label: 'Security', href: '/account/security' },
+];
+
+/** The signed-in console: a tinted frame with navigation, and the work on an inset panel (design system, product screens). */
+function consoleLayout(o: Form & { title: string; view: AccountView; account: Account; body: Html }): string {
+  return html`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="same-origin">
+<title>${o.title} · LotusPond account</title>
+<link rel="stylesheet" href="/assets/accounts.css">
+</head>
+<body class="console">
+<div class="frame">
+<header class="bar">
+<a class="lp-wordmark" href="/account" aria-label="LotusPond account, products">LotusPond<i aria-hidden="true"></i><b>Account</b></a>
+<div class="bar__who">
+<span class="bar__email">${o.account.email}</span>
+<form method="post" action="/account/sign-out">${csrfField(o)}<button class="lp-btn lp-btn--outline lp-btn--sm" type="submit">Sign out</button></form>
+</div>
+</header>
+<nav class="nav" aria-label="Your account">
+<ul>${VIEWS.map(v => html`<li><a href="${v.href}"${v.view === o.view ? html` aria-current="page"` : null}>${ICONS[v.view]}<span>${v.label}</span></a></li>`)}</ul>
+</nav>
+<main class="panel">${o.body}</main>
+</div>
+</body>
+</html>`.value;
+}
+
+const confirmedTag = (a: Account) => (a.emailVerifiedAt ? html`<span class="tag">Confirmed</span>` : html`<span class="tag wait">Not confirmed</span>`);
+
+export function accountView(o: Form & { view: AccountView; account: Account; products: ProductCard[]; notice?: string; nameProblem?: Problem; passwordProblem?: Problem }): string {
   const a = o.account;
-  return layout({
-    title: 'Your account',
-    body: html`<h1>Your LotusPond account.</h1>
-${o.notice ? html`<p class="notice" role="status">${o.notice}</p>` : null}
+  const notice = o.notice ? html`<p class="notice" role="status">${o.notice}</p>` : null;
+  if (o.view === 'profile') {
+    return consoleLayout({ ...o, title: 'Profile', body: html`<h1 class="screen-title">Profile</h1>
+<p class="screen-lede">What your LotusPond account holds about you. Products you use receive your email, name and region.</p>
+${notice}
 <ul class="rows">
-<li><span>Email</span><span>${a.email} ${a.emailVerifiedAt ? html`<span class="tag">Confirmed</span>` : html`<span class="tag wait">Not confirmed</span>`}</span></li>
+<li><span>Email</span><span>${a.email} ${confirmedTag(a)}</span></li>
 <li><span>Country</span><span>${countryName(a.country)}</span></li>
 </ul>
-<h2>Name</h2>
-<form method="post" action="/account/name" novalidate>
+<form class="form" method="post" action="/account/name" novalidate>
 ${csrfField(o)}
 ${input({ name: 'name', label: 'Your name', type: 'text', autocomplete: 'name', value: a.name, problem: o.nameProblem })}
-<button class="lp-btn lp-btn--outline" type="submit">Save name</button>
-</form>
-<h2>Connected products</h2>
-${o.products.length
-    ? html`<ul class="rows">${o.products.map(p => html`<li><span>${PRODUCT_NAMES[p.product]}</span><span class="hint">Last signed in ${p.lastAt.toISOString().slice(0, 10)}</span></li>`)}</ul>`
-    : html`<p class="hint">You have not used this account with a LotusPond product yet.</p>`}
-<h2>Password</h2>
-<p class="hint">Changing it signs you out of every LotusPond product, everywhere. This page stays signed in.</p>
-<form method="post" action="/account/password" novalidate>
+<button class="lp-btn lp-btn--brand" type="submit">Save name</button>
+</form>` });
+  }
+  if (o.view === 'security') {
+    return consoleLayout({ ...o, title: 'Security', body: html`<h1 class="screen-title">Security</h1>
+<p class="screen-lede">Changing your password signs you out of every LotusPond product, everywhere. This browser stays signed in.</p>
+${notice}
+<form class="form" method="post" action="/account/password" novalidate>
 ${csrfField(o)}
 <input type="text" name="username" value="${a.email}" autocomplete="username" hidden>
 ${input({ name: 'current_password', label: 'Current password', type: 'password', autocomplete: 'current-password', problem: o.passwordProblem?.code === 'wrong_password' ? o.passwordProblem : undefined })}
 ${input({ name: 'new_password', label: 'New password', type: 'password', autocomplete: 'new-password', hint: 'At least 10 characters.', problem: o.passwordProblem?.code === 'weak_password' ? o.passwordProblem : undefined })}
-<button class="lp-btn lp-btn--outline" type="submit">Change password</button>
-</form>
-<form method="post" action="/account/sign-out">
-${csrfField(o)}
-<div class="actions"><button class="lp-btn lp-btn--accent" type="submit">Sign out</button></div>
-</form>`,
-  });
+<button class="lp-btn lp-btn--brand" type="submit">Change password</button>
+</form>` });
+  }
+  const connected = o.products.filter(p => p.firstAt).length;
+  return consoleLayout({ ...o, title: 'Products', body: html`<h1 class="screen-title">Products</h1>
+<p class="screen-lede">Signed in as ${a.name}. ${connected ? html`Connected to ${connected === 1 ? 'one product' : `${connected} products`}.` : html`Not connected to a product yet.`} One account signs you in to every LotusPond product.</p>
+${notice}
+<ul class="products">${o.products.map(productCard)}</ul>
+<p class="hint">A product you use receives your email, your name and the region that holds your account. Your records stay in the product: this account never sees them, and no product learns which other products you use.</p>` });
 }
 
 /* ---------- signing out ---------- */

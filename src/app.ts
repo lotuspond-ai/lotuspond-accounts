@@ -13,6 +13,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import type { Config, Region } from './config.ts';
 import type { Database } from './db/client.ts';
 import { productClients } from './db/directory-schema.ts';
+import { PRODUCTS } from './lib/products.ts';
 import { AccountService, type Account, type AuditContext, type Product, type Problem } from './accounts.ts';
 import { HydraError, isChallenge, type Hydra, type LoginRequest } from './hydra.ts';
 import { hmac, randomToken, safeEqual } from './lib/crypto.ts';
@@ -26,7 +27,7 @@ import * as pages from './views/pages.ts';
 import { buildStylesheet } from './views/styles.ts';
 
 export interface Deps {
-  config: Pick<Config, 'publicUrl' | 'trustProxy' | 'openCountries' | 'sessionTtlMs' | 'secureCookies' | 'env'>;
+  config: Pick<Config, 'publicUrl' | 'trustProxy' | 'openCountries' | 'sessionTtlMs' | 'secureCookies' | 'env' | 'productUrls'>;
   directory: Pick<Database, 'ping' | 'db'>;
   cells: Map<Region, Pick<Database, 'ping' | 'db'>>;
   hydra: Hydra;
@@ -448,14 +449,29 @@ export function createApp(deps: Deps) {
 
   /* ---------- the account page ---------- */
 
-  const accountPage = async (c: Context, account: Account, extra: Partial<Parameters<typeof pages.accountPage>[0]> = {}, status: 200 | 400 = 200) =>
-    page(c, pages.accountPage({ csrf: formToken(c), account, products: await service.connectedProducts(account), ...extra }), status);
+  /** Every LotusPond product, for the account page: whether it signs in with Accounts yet, and this person's use of it. */
+  const productCards = async (account: Account): Promise<pages.ProductCard[]> => {
+    const [used, registered] = await Promise.all([
+      service.connectedProducts(account),
+      deps.directory.db.selectDistinct({ product: productClients.product }).from(productClients),
+    ]);
+    const live = new Set(registered.map(r => r.product));
+    return PRODUCTS.map(product => {
+      const mine = used.find(u => u.product === product);
+      return { product, url: config.productUrls[product] ?? null, live: live.has(product) || !!mine, firstAt: mine?.firstAt ?? null, lastAt: mine?.lastAt ?? null };
+    });
+  };
+  const accountPage = async (c: Context, view: pages.AccountView, account: Account, extra: Partial<Parameters<typeof pages.accountView>[0]> = {}, status: 200 | 400 = 200) =>
+    page(c, pages.accountView({ csrf: formToken(c), view, account, products: view === 'products' ? await productCards(account) : [], ...extra }), status);
 
-  app.get('/account', async c => {
-    const signedIn = await signedInAccount(c);
-    if (!signedIn) return c.redirect('/login', 302);
-    return accountPage(c, signedIn.account);
-  });
+  // The signed-in console: Products (/account), Profile and Security.
+  for (const [path, view] of [['/account', 'products'], ['/account/profile', 'profile'], ['/account/security', 'security']] as const) {
+    app.get(path, async c => {
+      const signedIn = await signedInAccount(c);
+      if (!signedIn) return c.redirect('/login', 302);
+      return accountPage(c, view, signedIn.account);
+    });
+  }
 
   app.post('/account/name', async c => {
     const body = await form(c);
@@ -463,8 +479,8 @@ export function createApp(deps: Deps) {
     const signedIn = await signedInAccount(c);
     if (!signedIn) return c.redirect('/login', 303);
     const result = await service.rename(signedIn.account, body.name ?? '');
-    if ('problem' in result) return accountPage(c, signedIn.account, { nameProblem: result.problem }, 400);
-    return accountPage(c, result, { notice: 'Name saved.' });
+    if ('problem' in result) return accountPage(c, 'profile', signedIn.account, { nameProblem: result.problem }, 400);
+    return accountPage(c, 'profile', result, { notice: 'Name saved.' });
   });
 
   app.post('/account/password', async c => {
@@ -475,10 +491,10 @@ export function createApp(deps: Deps) {
     const wait = limits.passwordByAccount.hit(signedIn.account.id);
     if (wait) return tooMany(c, wait);
     const result = await service.changePassword(signedIn.account, body.current_password ?? '', body.new_password ?? '', { sessionDigest: signedIn.digest }, auditCtx(c));
-    if ('problem' in result) return accountPage(c, signedIn.account, { passwordProblem: result.problem }, 400);
+    if ('problem' in result) return accountPage(c, 'security', signedIn.account, { passwordProblem: result.problem }, 400);
     limits.passwordByAccount.reset(signedIn.account.id);
     await revokeAll(result.revoke);
-    return accountPage(c, signedIn.account, { notice: 'Password changed. You are signed out of LotusPond products everywhere; sign in to them again.' });
+    return accountPage(c, 'security', signedIn.account, { notice: 'Password changed. You are signed out of LotusPond products everywhere; sign in to them again.' });
   });
 
   /** Sign out of Accounts here, then let Hydra end its session too (and tell the products). */
