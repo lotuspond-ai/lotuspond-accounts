@@ -3,11 +3,11 @@
 Staging is two small servers in Mumbai, LotusPond Accounts at `staging.accounts.lotuspond.ai` and LotusPond Health at `staging.health.lotuspond.ai`, sending real email through Amazon SES in its sandbox. The owner settled these on 18 November 2026:
 
 - **Synthetic accounts only.** No production account, email or record is ever copied to staging. The account import is rehearsed with a generated file in Health's export format.
-- **SES sandbox.** Email reaches only addresses verified in SES: a few test inboxes.
+- **SES sandbox.** Email reaches only addresses verified in SES. Every `@lotuspond.ai` address is covered, because the whole domain is verified; another inbox needs `aws sesv2 create-email-identity` and the link AWS sends it.
 - **Two small servers**, one per product, as in production.
 - **Hostnames** `staging.accounts.lotuspond.ai` and `staging.health.lotuspond.ai`.
 
-**Status:** everything below exists as code and has run locally (`docs/validation/2026-11-18-m4-local.md`). **Nothing has been created on AWS yet.** The AWS credentials this work was done with were refused by AWS (`InvalidClientTokenId`).
+**Status:** staging runs on AWS since 18 November 2026: Accounts at `staging.accounts.lotuspond.ai`, Health at `staging.health.lotuspond.ai`, email through SES in its sandbox. What was checked there is in `docs/validation/2026-11-18-m4-staging.md`.
 
 ## What it costs
 
@@ -153,18 +153,36 @@ Health staging must run code that includes `lotuspond-health#40` and `#48`, both
 
 Never copy production data. Instead:
 
-1. **Health accounts with passwords.** On Health staging, create a few through its own sign-up, with addresses you control or `@example.com` ones.
-2. **Export them** on Health staging: `docker compose exec app node dist/index.js accounts:export /tmp/export.jsonl`.
-3. **Import them** on the Accounts server. Stream the file in, so it belongs to the app's user, then stream the answer out:
+1. **Health accounts with passwords.** On Health staging, create a few with its own password form (not Continue with LotusPond Account), with `@example.com` addresses or `@lotuspond.ai` ones you can read. Keep the password of the one you will sign in with.
+2. **Export them** on Health staging, and pack the file to carry it to the Accounts server. Copying long lines out of a browser terminal garbles them (on 18 November every line arrived as "not JSON"); one packed block survives copying even when the terminal wraps it:
 
    ```sh
-   docker compose exec -T app sh -c 'umask 077 && cat > /tmp/export.jsonl' < export.jsonl
-   docker compose exec -T app node dist/accounts-cli.js import /tmp/export.jsonl /tmp/answer.jsonl
-   docker compose exec -T app cat /tmp/answer.jsonl > answer.jsonl
+   cd /opt/lotuspond-health/deploy
+   docker compose exec -T app node dist/index.js accounts:export /tmp/export.jsonl
+   docker compose exec -T app cat /tmp/export.jsonl | gzip | base64 -w0; echo
    ```
 
-4. **Link them** on Health staging: `accounts:link answer.jsonl`.
-5. **Delete** both files on both servers and on your machine.
+3. **Import them** on the Accounts server. Unpack the block (paste it, then Enter and Ctrl+D), stream the file in so it belongs to the app's user, import, and pack the answer:
+
+   ```sh
+   cd /opt/lotuspond-accounts/deploy
+   base64 -di | gunzip > ~/export.jsonl; wc -l ~/export.jsonl
+   docker compose exec -T app sh -c 'umask 077 && cat > /tmp/export.jsonl' < ~/export.jsonl
+   docker compose exec -T app node dist/accounts-cli.js import /tmp/export.jsonl /tmp/answer.jsonl
+   docker compose exec -T app cat /tmp/answer.jsonl | gzip | base64 -w0; echo
+   ```
+
+   The import never overwrites an answer file: before running it again, `docker compose exec -T app rm -f /tmp/answer.jsonl`. A second run skips the accounts already imported.
+4. **Link them** on Health staging:
+
+   ```sh
+   base64 -di | gunzip > ~/answer.jsonl; wc -l ~/answer.jsonl
+   docker compose exec -T app sh -c 'cat > /tmp/answer.jsonl' < ~/answer.jsonl
+   docker compose exec -T app node dist/index.js accounts:link /tmp/answer.jsonl
+   ```
+
+5. **Delete** both files on both servers, inside the app containers and in the home folders.
+6. **Sign in as an imported person** with Continue with LotusPond Account, using the old Health password. Health's own password form checks only Health's copy of the password; a password changed at Accounts is never in it. Until the person's first sign-in through Accounts, their Health password keeps working; after it, Health refuses it (the owner's rule of 18 November 2026).
 
 For load or larger rehearsals, `npx tsx tools/synthetic-health-export.ts <count> <file>` writes a made-up export, with `@example.com` addresses and one shared test password.
 
