@@ -1,0 +1,14 @@
+# One check for a new commit on the branch this server follows (deploy/auto-deploy.sh). Started by
+# lotuspond-accounts-auto-deploy.timer. install-auto-deploy.sh sets DEPLOY_BRANCH in a drop-in next to this file.
+[Unit]
+Description=LotusPond Accounts: deploy a new commit
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/opt/lotuspond-accounts/deploy/auto-deploy.sh
+TimeoutStartSec=20min

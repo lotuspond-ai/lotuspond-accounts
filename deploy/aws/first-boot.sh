@@ -2,7 +2,8 @@
 # First-boot script for a LotusPond Accounts Lightsail server (Ubuntu 24.04), rendered by create-server.sh, which fills
 # in the placeholders below. The repository is public, so no key is needed to clone it; this script holds no secret.
 # It installs Docker, clones the repository at the given ref, creates deploy/.env with fresh secrets, and starts the
-# stack. SES keys are added to deploy/.env by hand afterwards (docs/staging.md). Log: /var/log/lotuspond-firstboot.log
+# stack, and turns on automatic deploys of one branch if given one. SES keys are added to deploy/.env by hand afterwards
+# (docs/staging.md). Log: /var/log/lotuspond-firstboot.log
 set -eu
 exec >>/var/log/lotuspond-firstboot.log 2>&1
 export DEBIAN_FRONTEND=noninteractive
@@ -26,3 +27,8 @@ if [ ! -f .env ]; then
 fi
 docker compose up -d --build
 echo "$(date -u +%FT%TZ) LotusPond Accounts stack started for __DOMAIN__"
+# Automatic deploys of one branch (deploy/auto-deploy.sh), when create-server.sh was given one: staging follows staging.
+if [ -n '__DEPLOY_BRANCH__' ]; then
+  sudo -u ubuntu sh -c "git -C $REPO rev-parse HEAD > ~/.lotuspond-accounts-deployed"
+  $REPO/deploy/install-auto-deploy.sh '__DEPLOY_BRANCH__'
+fi
