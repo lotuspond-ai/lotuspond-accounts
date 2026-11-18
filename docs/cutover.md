@@ -103,6 +103,49 @@ On Health production, unset `ACCOUNTS_ISSUER` (and the client settings) in `depl
 
 ## After the week
 
-Record the week's reports in `docs/validation/`.
-- **M8** (`PASSWORD_SIGN_IN=off` on Health) follows once most active app installs run the Accounts sign-in.
-- **M9** drops Health's `password_hash` and directory, in its own reviewed migration.
+Record the week's reports in `docs/validation/`. **M9** drops Health's `password_hash` and directory later, in its own reviewed migration.
+
+## Turning Health passwords off (build plan M8)
+
+After this, LotusPond Accounts is the only way into Health. Rehearsed in `tools/cutover-rehearsal.sh`, step 6.
+
+### Gates
+
+- [ ] M7's week of watching is recorded, with no open rollback trigger.
+- [ ] **Readiness is read** on each Health host:
+
+  ```sh
+  docker compose exec -T app node dist/index.js accounts:readiness 14
+  ```
+
+  The figure to watch is "never signed in with Accounts yet". Those people must use Accounts at their next sign-in. They can, with their old Health password if they were imported, or by signing up with the same email if they were not. **But only from an app or browser that has the Accounts sign-in.**
+- [ ] **App versions.** Health does not record them, so readiness cannot show how many installs still run an app without the Accounts sign-in. Use the store consoles' version adoption figures.
+  - Alternatively, first make the apps send their version and have Health record it, a small change in Health and the apps.
+  - The plan's test is "most active app installs run the new version".
+  - Once passwords are off, an older app shows a "use LotusPond Accounts" message it cannot act on. Its people need to update the app.
+- [ ] **A notice to people who have not moved,** with text reviewed with the privacy texts. Health cannot email them itself; Accounts can only email imported people, at addresses not yet confirmed.
+
+### Switch
+
+In Health production's `deploy/.env`, set `PASSWORD_SIGN_IN=off`, then run `docker compose up -d`.
+
+Check at once:
+
+- [ ] Health's password sign-in and registration answer `use_accounts`.
+- [ ] An imported, never-moved account signs in at Accounts with its old Health password, confirms its email, and lands in its own Health account.
+- [ ] A Health account that was never imported: its person signs up at Accounts with the same email, confirms it, and Health joins their account.
+
+Then watch `accounts-cli report 1` daily, as for M7.
+
+### Rollback
+
+Unset `PASSWORD_SIGN_IN` and restart. Passwords work again for people who never moved (option 3, above).
+
+### What the rehearsal showed
+
+| Who | With passwords off |
+| --- | --- |
+| **B**, imported, never moved | Health's password sign-in is refused. At Accounts, B's old Health password works (the import kept its hash). B confirms their email and lands in their own account. |
+| **E**, joined Health after the export, never imported | E signs up at Accounts with the same email, confirms it, and Health joins E's existing account by verified email. |
+| **A**, moved, password reset at Accounts | A signs in with the new Accounts password. |
+| Anyone | Health's registration is refused: sign-up is at Accounts. |

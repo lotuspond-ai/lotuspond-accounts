@@ -3,7 +3,10 @@
 //   before    Health as it is today, passwords only: three people register.
 //   after     Health with ACCOUNTS_ISSUER set and passwords still on: an imported person signs in through Accounts
 //             into their own Health account, another still uses their Health password, someone new signs up.
-//   rollback  Health with ACCOUNTS_ISSUER unset again: what each kind of person can and cannot do.
+//   rollback  Health with ACCOUNTS_ISSUER unset again: what each kind of person can and cannot do. E registers with
+//             Health now, after the export, so E is never imported.
+//   passwords-off  Health with ACCOUNTS_ISSUER and PASSWORD_SIGN_IN=off (build plan M8): everyone signs in through
+//             Accounts, including people who never moved (B) and people who were never imported (E).
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { randomBytes } from 'node:crypto';
@@ -16,7 +19,7 @@ const PHASE = process.env.CUTOVER_PHASE;
 const FACTS = process.env.CUTOVER_FACTS!;
 
 interface Person { email: string; password: string; healthId: string }
-interface Facts { a: Person; b: Person; c: Person; d?: Person; aNewPassword?: string }
+interface Facts { a: Person; b: Person; c: Person; d?: Person; e?: Person; aNewPassword?: string }
 
 /** A browser across both sites; cookies per host name, as browsers keep them. */
 class Browser {
@@ -67,7 +70,7 @@ async function outbox(to: string, kind: RegExp): Promise<URL> {
   throw new Error(`No email to ${to}.`);
 }
 
-test(`switch-over rehearsal: ${PHASE}`, async () => {
+test(`switch-over rehearsal: ${PHASE}`, { skip: PHASE === 'passwords-off' }, async () => {
   if (PHASE === 'before') {
     const person = async (tag: string): Promise<Person> => {
       const p = { email: `cutover-${tag}-${randomBytes(3).toString('hex')}@example.com`, password: `health password ${randomBytes(3).toString('hex')}`, healthId: '' };
@@ -154,4 +157,54 @@ test(`switch-over rehearsal: ${PHASE}`, async () => {
   // D only ever had an Accounts password: with Accounts sign-in off, D cannot sign in to Health.
   const d = new Browser();
   assert.notEqual((await healthSignIn(d, facts.d!)).status, 200, 'rolled back, D cannot sign in: they have no Health password');
+
+  if (PHASE === 'rollback') {
+    // E joins Health while it is rolled back: after the export, so E is never imported into Accounts.
+    const e = new Browser();
+    facts.e = { email: `cutover-e-${randomBytes(3).toString('hex')}@example.com`, password: `health password ${randomBytes(3).toString('hex')}`, healthId: '' };
+    assert.equal((await health(e, 'POST', '/api/auth/register', { email: facts.e.email, password: facts.e.password, ...register })).status, 201);
+    facts.e.healthId = (await me(e))!.account.id;
+    fs.writeFileSync(FACTS, JSON.stringify(facts), { mode: 0o600 });
+  }
+});
+
+/** Through Health's sign-in button to Accounts' page; sign in (or sign up) there; back at Health. */
+async function throughAccounts(b: Browser, p: { email: string; password: string }, o: { signUp?: boolean; expectConfirm?: boolean } = {}) {
+  const start = `${HEALTH}/api/auth/accounts/start?intent=${o.signUp ? 'signup' : 'login'}`;
+  const page = await (await b.follow(await b.get(start), start)).res.text();
+  const challenge = hiddenValue(page, 'login_challenge')!;
+  const res = o.signUp
+    ? await b.request('POST', `${ACCOUNTS}/signup`, { form: { csrf: csrfOf(page), login_challenge: challenge, email: p.email, name: 'Rehearsal Person', password: p.password, country: 'IN', accept_terms: 'yes' } })
+    : await b.request('POST', `${ACCOUNTS}/login`, { form: { csrf: csrfOf(page), login_challenge: challenge, email: p.email, password: p.password } });
+  if (!o.expectConfirm) return b.follow(res, `${ACCOUNTS}/login`, atHealthPage);
+  const check = await res.text();
+  assert.match(check, /Confirm your email/);
+  const link = await outbox(p.email, /verify-email/);
+  const confirm = await (await b.get(link.href)).text();
+  await b.request('POST', `${ACCOUNTS}/verify-email`, { form: { csrf: csrfOf(confirm), token: link.searchParams.get('token')! } });
+  return b.follow(await b.request('POST', `${ACCOUNTS}/login/continue`, { form: { csrf: csrfOf(check), login_challenge: challenge } }), `${ACCOUNTS}/login/continue`, atHealthPage);
+}
+
+test('switch-over rehearsal: passwords off (M8)', { skip: PHASE !== 'passwords-off' }, async () => {
+  const facts = JSON.parse(fs.readFileSync(FACTS, 'utf8')) as Facts;
+  // Health's own password routes are closed to everyone.
+  const b = new Browser();
+  const pw = await healthSignIn(b, facts.b);
+  assert.equal(pw.status, 409, 'Health passwords are off');
+  assert.equal(((await pw.json()) as { error: { code: string } }).error.code, 'use_accounts');
+  assert.equal((await health(new Browser(), 'POST', '/api/auth/register', { email: 'late@example.com', password: 'a long password here', ...register })).status, 409);
+
+  // B never moved: their imported Health password works at Accounts, they confirm the email, and land in their account.
+  await throughAccounts(b, facts.b, { expectConfirm: true });
+  assert.equal((await me(b))?.account.id, facts.b.healthId, 'B, imported but never moved, reaches their own account');
+
+  // E was never imported: they sign up at Accounts with the same email, confirm it, and Health joins their account.
+  const e = new Browser();
+  await throughAccounts(e, { email: facts.e!.email, password: `new accounts password ${randomBytes(3).toString('hex')}` }, { signUp: true, expectConfirm: true });
+  assert.equal((await me(e))?.account.id, facts.e!.healthId, 'E, never imported, is joined to their own account by verified email');
+
+  // A, moved and reset, signs in with the new Accounts password.
+  const a = new Browser();
+  await throughAccounts(a, { email: facts.a.email, password: facts.aNewPassword! });
+  assert.equal((await me(a))?.account.id, facts.a.healthId);
 });

@@ -7,7 +7,9 @@
 #   2. Health stopped; Health's accounts:export; Accounts' import; Health's accounts:link.
 #   3. Health with ACCOUNTS_ISSUER, passwords still on (the plan's "both" stage), and the checks.
 #   4. Rollback: Health with ACCOUNTS_ISSUER unset again, and what each kind of person can do.
-#   5. The watch report.
+#   5. Health's readiness counts.
+#   6. Passwords off (M8): everyone through Accounts, including people never moved or never imported.
+#   7. The watch report.
 set -eu
 : "${HEALTH_DIR:?Set HEALTH_DIR to a lotuspond-health checkout with dependencies installed}"
 HEALTH_DIR=$(cd "$HEALTH_DIR" && pwd)
@@ -33,9 +35,11 @@ health_env() {
   echo "NODE_ENV=development PORT=$port DATA_DIR=$work/db PUBLIC_URL=http://localhost:$port RECORD_AGENT=off"
 }
 start_health() {
-  # $1: "accounts" to set ACCOUNTS_ISSUER (the switch-over), anything else for Health as it is today.
+  # $1: "accounts" to set ACCOUNTS_ISSUER (the switch-over), "passwords-off" to also turn Health passwords off (M8),
+  # anything else for Health as it is today.
   extra=
   [ "$1" = accounts ] && extra="ACCOUNTS_ISSUER=http://localhost:8080 ACCOUNTS_CLIENT_ID=$client ACCOUNTS_CLIENT_SECRET=$secret"
+  [ "$1" = passwords-off ] && extra="ACCOUNTS_ISSUER=http://localhost:8080 ACCOUNTS_CLIENT_ID=$client ACCOUNTS_CLIENT_SECRET=$secret PASSWORD_SIGN_IN=off"
   (cd "$HEALTH_DIR/server" && env $(health_env) $extra setsid npx tsx src/index.ts) >"$work/health-$1.log" 2>&1 &
   pid=$!
   for _ in $(seq 1 60); do
@@ -49,7 +53,7 @@ health_cli() { (cd "$HEALTH_DIR/server" && env $(health_env) npx tsx src/index.t
 phase() {
   status=0
   (cd "$root" && CUTOVER_PHASE=$1 CUTOVER_FACTS="$work/facts.json" HEALTH_URL="http://localhost:$port" node --import tsx --test --test-reporter=spec test-e2e/cutover.test.ts) >"$work/phase-$1.txt" 2>&1 || status=$?
-  if [ "$status" -eq 0 ]; then grep -E '^✔' "$work/phase-$1.txt"; return 0; fi
+  if [ "$status" -eq 0 ]; then grep -E '^✔' "$work/phase-$1.txt" | grep -v '# SKIP'; return 0; fi
   sed -n '/failing tests:/,$p' "$work/phase-$1.txt" >&2
   echo "--- Health's log" >&2; tail -20 "$work"/health-*.log >&2
   exit "$status"
@@ -78,5 +82,13 @@ start_health today
 phase rollback
 stop_health
 
-echo "5. The watch report."
+echo "5. Readiness to turn Health passwords off (M8), read by Health from its own database."
+health_cli accounts:readiness 14
+
+echo "6. Passwords off (M8): ACCOUNTS_ISSUER set and PASSWORD_SIGN_IN=off."
+start_health passwords-off
+phase passwords-off
+stop_health
+
+echo "7. The watch report."
 $C exec -T app node dist/accounts-cli.js report 1
