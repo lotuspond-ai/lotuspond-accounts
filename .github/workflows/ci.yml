@@ -86,6 +86,11 @@ jobs:
           ACME_EMAIL: local@localhost
           HEALTH_DIR: health
         run: tools/health-e2e.sh
+      - name: The switch-over rehearsal (export, import, link, both, rollback)
+        env:
+          ACME_EMAIL: local@localhost
+          HEALTH_DIR: health
+        run: tools/cutover-rehearsal.sh
       - name: Logs on failure
         if: failure()
         working-directory: deploy
