@@ -19,7 +19,16 @@ C="docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.ym
 port=8787
 work=$(mktemp -d)
 pid=
-stop_health() { [ -n "$pid" ] && { kill -- "-$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; pid=; }; sleep 1; }
+# Stop Health's whole process group and wait until every process in it has gone (its embedded database writes files
+# while it shuts down), not only the one that was started.
+stop_health() {
+  if [ -n "$pid" ]; then
+    kill -- "-$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    for _ in $(seq 1 100); do kill -0 -- "-$pid" 2>/dev/null || break; sleep 0.1; done
+    pid=
+  fi
+}
 trap 'stop_health; rm -rf "$work"' EXIT INT TERM
 
 if curl -s --noproxy '*' -o /dev/null "http://localhost:$port/"; then echo "Port $port is taken; stop what runs there." >&2; exit 1; fi

@@ -7,7 +7,7 @@ set -euo pipefail
 ENVIRONMENT=${ENVIRONMENT:?Set ENVIRONMENT to staging or production}
 DOMAIN=${DOMAIN:?Set DOMAIN, e.g. staging.accounts.lotuspond.ai}
 ACME_EMAIL=${ACME_EMAIL:?Set ACME_EMAIL (Let\'s Encrypt sends certificate notices there)}
-SSH_CIDR=${SSH_CIDR:?Set SSH_CIDR to the only address allowed to SSH, e.g. a.b.c.d/32}
+SSH_CIDR=${SSH_CIDR:?Set SSH_CIDR to the only address allowed to SSH, e.g. a.b.c.d/32, or lightsail-connect for browser SSH only}
 REF=${REF:-main}
 REGION=ap-south-1
 STACK="lotuspond-accounts-$ENVIRONMENT-in"
