@@ -28,7 +28,13 @@ The rehearsal shows what happens today. Health (#40) keeps a person's Health pas
 - **During `both`:** a moved person can still sign in to Health with their *old* Health password, even after changing or resetting their password at Accounts.
 - **On rollback:** the same thing. The old Health password opens Health again, and the new Accounts password does not.
 
-That means a password someone changed because it leaked still opens Health until M9. The build plan proposed clearing Health's hash at the person's first Accounts sign-in. That closes the gap, at the cost of a rollback that sends moved people through Health's password reset. **Choose one before the switch-over.**
+That means a password someone changed because it leaked still opens Health until M9. Health has no password reset of its own, which limits the options:
+
+1. **Keep the hash, as built.** Rollback is gentle, but an old or leaked Health password keeps working until M9.
+2. **Clear the hash at the first Accounts sign-in,** as the build plan proposed. The gap closes, but after a rollback moved people cannot sign in to Health at all, since Health cannot reset passwords.
+3. **Keep the hash, but refuse password sign-in for a linked account while `ACCOUNTS_ISSUER` is set.** The old password then cannot be used during `both`. It works again only after a rollback, which is short by design. This is a small change in Health.
+
+**Choose one before the switch-over.**
 
 ## The sequence
 
